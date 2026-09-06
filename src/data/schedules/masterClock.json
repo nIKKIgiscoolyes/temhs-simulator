@@ -1,0 +1,14 @@
+{
+  "authority": "NON_CANON_IMPLEMENTATION_DEFAULT",
+  "cycleLength": 13,
+  "startMinute": 480,
+  "homingMinutes": 15,
+  "pulseMinutes": 40,
+  "passageMinutes": 10,
+  "pulseCount": 7,
+  "mealAfterPulse": 3,
+  "mealMinutes": 36,
+  "terminalMinutes": 18,
+  "defaultMinute": 532,
+  "defaultCycleDay": 1
+}

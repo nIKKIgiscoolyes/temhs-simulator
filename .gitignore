@@ -1,0 +1,17 @@
+node_modules/
+dist/
+.env*
+playwright-report/
+test-results/
+
+# Original user source attachments are local/reference-only.
+.local-references/
+upload/
+uploads/
+attachments/
+source-attachments/
+Pasted\ markdown*.md
+docs/canon/DEVELOPMENT_CONTRACT.md
+# Original image references (generated project imagery remains allowed).
+**/d97e60cf-2f97-426b-bb7e-92d9d640ff6a.png
+**/84cdadb7-ee43-4bd7-a93e-d7c2243efd02.png
