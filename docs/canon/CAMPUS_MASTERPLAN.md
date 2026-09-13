@@ -384,3 +384,7 @@ Use a lightweight exterior backdrop where required.
 Exterior architecture should support interior realism but is not the primary project scope.
 
 ---
+
+## Alpha 0.2 implementation note (non-canon dimensions)
+
+The current fixed playable plan contains six levels and five instructional districts per level. Central, North, East, West and North Extension contain 180 total instructional rooms; 24 support rooms sit beside the cross-concourse. The footprint reaches about 430 metres northward, with roughly 220 metres east–west extent. These dimensions, room codes and repeated floor kits are implementation choices, not a replacement for institutional canon. Levels -5 through -30 remain outside the playable area.

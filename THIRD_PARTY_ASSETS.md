@@ -13,3 +13,5 @@
 | Development contract | User attachment | User-provided project instructions | Local/reference-only source; original excluded from public files and history |
 
 No third-party character model, commercial music, proprietary architecture kit, downloaded artwork or runtime image hotlink is included.
+
+Expansion 0.2 adds original generated articulated character geometry, procedural surface textures, classroom equipment, campus architecture and synthesized WebAudio. These are implemented in source; no external model, image or audio asset was imported. Additional uploaded expansion instructions remain local/reference-only.

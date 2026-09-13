@@ -1,6 +1,10 @@
+import type { SimulationSave } from "../npc/CampusSimulation";
+import { ACTIVE_STUDENTS } from "../npc/NPCScheduler";
+import { roomById } from "../campus/plan";
 import type { Point } from "../campus/plan";
 export interface Save {
-  version: 1;
+  version: 1 | 2;
+  simulation?: SimulationSave;
   day: number;
   minute: number;
   speed: number;
@@ -17,7 +21,7 @@ export function encode(save: Save) {
 export function decode(raw: string): Save {
   const s = JSON.parse(raw);
   if (
-    s.version !== 1 ||
+    ![1, 2].includes(s.version) ||
     s.seed !== 20260907 ||
     !Number.isInteger(s.day) ||
     s.day < 0 ||
@@ -34,13 +38,44 @@ export function decode(raw: string): Save {
     )
   )
     throw new Error("This save is invalid or uses an unsupported version.");
+  if (s.simulation) {
+    const sim = s.simulation;
+    if (
+      !Number.isFinite(sim.time) ||
+      typeof sim.blockKey !== "string" ||
+      !Array.isArray(sim.agents) ||
+      sim.agents.length > ACTIVE_STUDENTS ||
+      !sim.agents.every(
+        (a: any, i: number) =>
+          a.index === i &&
+          roomById(a.room) &&
+          roomById(a.target) &&
+          [a.point, ...(Array.isArray(a.path) ? a.path : [])].every(
+            (p: any) =>
+              p && ["x", "y", "z"].every((k) => Number.isFinite(p[k])),
+          ) &&
+          Array.isArray(a.path) &&
+          Number.isInteger(a.cursor) &&
+          a.cursor >= 0 &&
+          a.cursor <= a.path.length &&
+          [a.heading, a.releaseAt, a.wait, a.liftStage].every(
+            Number.isFinite,
+          ) &&
+          typeof a.activity === "string" &&
+          typeof a.walking === "boolean" &&
+          ["stairs", "lift"].includes(a.transport),
+      )
+    )
+      throw new Error("Invalid locomotion state in save.");
+  }
   return s;
 }
-const KEY = "temhs-save-v1";
+const KEY = "temhs-save-v2";
 export function saveLocal(save: Save) {
   localStorage.setItem(KEY, encode(save));
 }
 export function loadLocal() {
-  const raw = localStorage.getItem(KEY);
+  const raw =
+    localStorage.getItem(KEY) ?? localStorage.getItem("temhs-save-v1");
   return raw ? decode(raw) : null;
 }

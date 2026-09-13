@@ -1,4 +1,4 @@
-import { type Point, type Room } from "../campus/plan";
+import { districts, type Point, type Room } from "../campus/plan";
 export interface Edge {
   to: string;
   cost: number;
@@ -43,29 +43,64 @@ export function routeBetween(
   end: Point,
   lane = 0,
 ): Point[] {
-  const p: Point[] = [start, { ...a.door }, { x: lane, y: a.y, z: a.door.z }];
+  const da = districts.find((d) => d.id === a.district) ?? districts[0],
+    db = districts.find((d) => d.id === b.district) ?? districts[0];
+  const p: Point[] = [
+    start,
+    { x: a.x + (a.x < da.x ? 5.4 : -5.4), y: a.y, z: start.z },
+    { x: a.x + (a.x < da.x ? 5.4 : -5.4), y: a.y, z: a.door.z },
+    { ...a.door },
+    { x: da.x + lane, y: a.y, z: a.door.z },
+  ];
   if (a.floor !== b.floor) {
     const step = Math.sign(b.y - a.y) * 8;
     for (let y = a.y; y !== b.y; y += step) {
       const high = Math.max(y, y + step);
-      if (step < 0) {
+      if (step < 0)
         p.push(
-          { x: -2, y: high, z: 97 },
-          { x: -2, y: high - 8, z: 125 },
-          { x: -8, y: high - 8, z: 127 },
-          { x: -8, y: high - 8, z: 95 },
+          { x: da.x - 2, y: high, z: da.z + 97 },
+          { x: da.x - 2, y: high - 8, z: da.z + 125 },
+          { x: da.x - 8, y: high - 8, z: da.z + 127 },
+          { x: da.x - 8, y: high - 8, z: da.z + 98 },
+          { x: da.x + lane, y: high - 8, z: da.z + 98 },
         );
-      } else {
+      else
         p.push(
-          { x: -8, y, z: 95 },
-          { x: -8, y, z: 127 },
-          { x: -2, y, z: 125 },
-          { x: -2, y: high, z: 97 },
+          { x: da.x + lane, y, z: da.z + 98 },
+          { x: da.x - 8, y, z: da.z + 98 },
+          { x: da.x - 8, y, z: da.z + 127 },
+          { x: da.x - 2, y, z: da.z + 125 },
+          { x: da.x - 2, y: high, z: da.z + 97 },
         );
-      }
     }
   }
-  p.push({ x: lane, y: b.y, z: b.door.z }, { ...b.door }, end);
+  if (da.id !== db.id) {
+    const exit = (d: typeof da, y: number): Point[] =>
+      d.id === "central"
+        ? [
+            { x: 4, y, z: 90 },
+            { x: 4, y, z: 140 },
+          ]
+        : d.id === "far-north"
+          ? [
+              { x: 0, y, z: 293 },
+              { x: 4, y, z: 293 },
+              { x: 4, y, z: 140 },
+            ]
+          : [
+              { x: d.x + lane, y, z: 143 },
+              { x: d.x + lane, y, z: 140 },
+              { x: 4, y, z: 140 },
+            ];
+    p.push(...exit(da, b.y), ...exit(db, b.y).reverse());
+  }
+  p.push(
+    { x: db.x + lane, y: b.y, z: b.door.z },
+    { ...b.door },
+    { x: b.x + (b.x < db.x ? 5.4 : -5.4), y: b.y, z: b.door.z },
+    { x: b.x + (b.x < db.x ? 5.4 : -5.4), y: b.y, z: end.z },
+    end,
+  );
   return p;
 }
 export function distance(a: Point, b: Point) {

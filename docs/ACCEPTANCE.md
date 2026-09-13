@@ -1,20 +1,21 @@
-# Acceptance status
+# Acceptance — expansion alpha 0.2
 
-| Gate | Status | Evidence or remaining work |
+| Gate | Result | Evidence / limit |
 | --- | --- | --- |
-| TypeScript | PASS | `npm run typecheck` |
-| Master clock and deterministic state | PASS | Automated boundary, identity, save, hold and travel tests |
-| Production compile | PASS | `npm run build` |
-| Browser preview server | RUNNING during validation | Supervised preview reports healthy |
-| Browser launch and console | BLOCKED | Browser navigation returned `ERR_BLOCKED_BY_CLIENT` |
-| Visual reference comparison | NOT VERIFIED | Browser could not open simulator |
-| First-person movement, stairs and player lift | IMPLEMENTED, NOT E2E VERIFIED | Needs interactive browser pass |
-| Full lesson-to-Passage acceptance | NOT PASSED | No visual verification; NPC lift queues, crowd avoidance and staff response remain incomplete |
-| Offscreen schedule continuity | LOGIC PASS | Student identity, destination and position reconstructed without render objects |
-| Physical crowd quality | INCOMPLETE | Analytic paths need local avoidance, queueing and delayed-arrival persistence |
-| Full six-floor campus | NOT STARTED | Contract requires proven vertical slice first |
-| Production visual assets | INCOMPLETE | Original simplified animal rigs, procedural architecture and simple texture noise |
-| 60 FPS / 1080p | NOT MEASURED | No reachable GPU browser test |
-| Public alpha preparation | AUTHORIZED; SANITIZED | User approved generated code/docs/configuration only. Original uploaded specification and reference images excluded from the public commit and its ancestry. |
+| Automated tests | PASS | 22 tests: schedules, identity, routes, holds, saves, continuous travel, meals/release, doors, geometry and streaming |
+| Type checking and production build | PASS | TypeScript and Vite build; vendor size warning remains |
+| Six-level expansion | IMPLEMENTED | 180 instructional and 24 support rooms; five districts per level, stairs, lift banks and concourses |
+| Deep sector loading | PASS | Test loads Level -4 extension, verifies floor support, restored door state and old-sector disposal |
+| Classroom visual inspection | PASS in compatibility mode | Inspected furnished upgraded Level -2 classroom and original articulated characters; teacher placement corrected |
+| Expanded floor inspection | PASS in compatibility mode | Inspected Floor 2 east corridor and Level -4 north extension through observer navigation |
+| Save/load | PASS in logic and compatibility UI | Version 2 round trip and v1 migration tested; browser reports local save and restore success |
+| Delayed arrivals and holds | PASS | Positions remain continuous across Pulse boundaries and holds |
+| Meal and terminal release | LOGIC PASS | Routes start from existing positions and point to commons/exits |
+| Physical crowd fidelity | PARTIAL | Local yielding and staggered release exist; no complete collision/queue solver or social simulation |
+| NPC lifts | IMPLEMENTED approximation | Staged waiting, hidden cabin travel and persistent state; independent of observer lift |
+| Observer stairs/lifts | IMPLEMENTED; full traversal QA OPEN | Destination geometry prepared before arrival; all-floor ride/walk coverage still required |
+| Audio | IMPLEMENTED; listening QA OPEN | Opt-in synthesized ambience, footsteps and tones |
+| GPU visual fidelity / 1080p performance | NOT VERIFIED | QA browser has no WebGL; compatibility screenshots cannot validate GPU lighting or frame rate |
+| Publication hygiene | PASS before push | 41 candidate files audited by path and original-upload content hashes; publication descends only from sanitized public alpha |
 
-No completed production zones are claimed. All current environments are ALPHA, not CONTENT_COMPLETE or VISUAL_COMPLETE.
+This milestone is an expansion alpha. It is not a declaration that the full requested realism or production acceptance standard has been met. Character production quality, advanced social and staff workflows, complete crowd collision handling, all-route traversal and GPU visual/performance checks remain open.

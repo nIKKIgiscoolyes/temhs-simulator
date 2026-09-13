@@ -1,30 +1,31 @@
-# Architecture
+# Architecture — expansion alpha 0.2
 
-## Boundaries
+## System boundaries
 
-- `core/GameClock.ts` constructs operational blocks from `data/schedules/masterClock.json`; elapsed-time advancement, day rollover and thirteen-day cycles do not depend on rendering.
-- `campus/plan.ts` owns stable slice room IDs, spatial definitions, access categories and scale. All physical numbers are implementation defaults.
-- `npc/NPCScheduler.ts` deterministically derives identity, class assignment, seat and travel from ID and time. Renderer disposal cannot reset these values. Only the slice cohort has complete current route definitions.
-- `navigation/RoutePlanner.ts` implements graph shortest-path filtering plus the current physical room/stair waypoint route. The generic closure-aware graph is tested but not yet integrated with all rendered campus routes.
-- `architecture/Environment.ts` constructs era-specific materials, furniture, concrete coffers, glazing, corridors and interactive doors. Immutable geometry is merged per sector/material/collision category. Doors, signs and teaching displays retain separate state.
-- `npc/Avatar.ts` owns replacement-ready original species geometry and simple joint animation. These are explicitly temporary assets.
-- `core/SaveSystem.ts` validates versioned browser-local state before returning it. Identity/schedule state is reconstructed from saved seed and clock, rather than serializing 30,000 redundant records.
-- `main.ts` owns input, simulation/render lifecycle, UI, player lift travel and current rendering tiers.
+- `GameClock` owns operational blocks and the thirteen-day cycle; exact timings remain editable implementation defaults.
+- `campus/plan.ts` defines six levels, five districts, 180 instructional rooms and 24 support rooms. The original eighteen room IDs, coordinates and record order are preserved.
+- `NPCScheduler` owns deterministic identities and assignments. Its legacy analytic sampling remains for regression checks; the live application uses `CampusSimulation`.
+- `CampusSimulation` advances 2,880 persistent records independently of render visibility. Records retain positions, waypoints, targets, release times, lift stages and waiting time. Movement is subdivided into steps no longer than 0.35 simulation seconds, with a spatial hash for conservative local yielding. Late students continue travelling into the next Pulse.
+- `RoutePlanner` builds physical corridor/stair/interdistrict waypoints. Its generic closure-aware shortest-path helper is tested separately; live campus routes do not yet support arbitrary closures.
+- `Environment` streams nearby classroom districts, preserves door state and disposes remote district geometry and sign textures. Connector geometry persists by floor. Immutable room and stair meshes are merged by material; doors remain interactive.
+- `Avatar` constructs original anatomical forms, clothing and species features with hierarchical joint animation. Render limits are 64/112/160 students on GPU or 14 in compatibility mode. Teachers are instantiated near the observer; student objects still churn at visibility boundaries.
+- `Atmosphere` synthesizes original noise and tones through opt-in WebAudio. There are no recordings, voices or runtime media downloads.
+- `main.ts` coordinates observer input, UI, lifts, scene lighting, visible agents and saves.
 
-## Streaming and scale
+## Spatial design
 
-Three slice sectors are enabled by proximity in elevation. Full room streaming and horizontal district streaming are future work. The current environment is roughly 130 metres along its main route; this does **not** satisfy the full-campus 5–8-minute route target. The architecture leaves the full institution intact in canon without claiming the slice is a full floor.
+The fixed plan repeats five instructional districts across levels 2, 1, -1, -2, -3 and -4. An east–west concourse at z=140 joins the side districts, while a north spine joins the central districts. The northernmost stair tower reaches about z=430. Each district contains six classrooms per level and a six-stop observer lift; 25 physical flights connect adjacent elevations. NPCs use their source district stairs or a staged central lift journey.
 
-## Schedule semantics
+New classroom districts are loaded in small increments with distance hysteresis. Save restoration, observer travel and lift selection explicitly prepare destination geometry before placement. Persistent student and door state survives sector unloading.
 
-Exact times are NON_CANON_IMPLEMENTATION_DEFAULT. Seven academic pulses are separated by Passage; a meal window contains staggered A/B/C movement. Hold activation clamps advancement at the next Passage boundary and preserves the old classroom until released; this is a conservative development hold policy, not an official bell-time rule. Instructional makeup time and scoped floor holds remain future work.
+## Behaviour and saves
 
-Routes are sampled in world metres against simulation seconds. Animation uses real elapsed time to avoid rapidly cycling limbs at accelerated clocks. Destination reconstruction provides offscreen consistency but cannot yet model independent accumulated delays and physical elevator queues. Add a persistent locomotion/queue layer before final crowd acceptance.
+Passage releases are staggered by seat and cohort. Holds retain physical positions. Local yielding slows followers and gives space to the observer; this is not reciprocal collision avoidance. Meal waves travel to commons, then return to class; terminal release routes go to district exits. These are simplified routines and can produce crowded shared destinations.
 
-## Saves
+Version 2 saves serialize locomotion alongside the existing player, clock and door state. Version 1 remains accepted and reconstructs student journeys. The browser storage key falls back to the old version when necessary. Malformed points, paths and unknown room IDs are rejected. Relationships, outages and construction closures are not persistent features yet.
 
-State is local to the current browser origin. It contains time, cycle basis, player position/orientation, open classroom doors, graphics and Still Bell V. Named social changes, outages and construction closures are not yet implemented or saved. Autosave runs every 30 seconds; manual save reports write failures. Unsupported and malformed saves are rejected before application.
+## Rendering and validation
 
-## Rendering
+The GPU path uses Babylon PBR materials, procedural surface textures, directional and room lighting and FXAA. A NullEngine-based CPU preview rasterizes the same geometry with a depth buffer when WebGL is unavailable. It deliberately uses simplified illumination and reduced resolution; it cannot establish PBR, shadow or GPU performance acceptance.
 
-Babylon WebGL engine with PBR materials, original procedural texture noise and pooled-by-identity visible proxy objects. Tier counts in diagnostics distinguish current slice schedules from unused identity capacity. There is no measured 1080p performance result yet. Live mesh churn during crowd transitions and the engine bundle size require profiling.
+The Babylon vendor bundle remains large (approximately 6 MB uncompressed). Real GPU profiling, crowd churn reduction and production material/character work remain necessary.

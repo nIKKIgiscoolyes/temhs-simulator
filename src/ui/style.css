@@ -344,3 +344,46 @@ button:focus-visible {
     padding: 9px 12px;
   }
 }
+
+.renderer-badge {
+  position: absolute;
+  top: 112px;
+  right: 24px;
+  font-size: 12px;
+  color: #e0c890;
+  background: #16272fe8;
+  padding: 6px 10px;
+}
+
+.top .brand {
+  padding: 10px 16px;
+  min-width: 230px;
+}
+.brand strong {
+  font-size: 20px;
+}
+.brand small {
+  font-size: 12px;
+}
+.top .clock {
+  padding: 9px 16px;
+}
+.notice {
+  top: 120px;
+  width: 280px;
+  font-size: 13px;
+  padding: 10px 14px;
+  opacity: 0.92;
+}
+.time {
+  font-size: 25px;
+}
+.bottom {
+  padding: 9px 13px;
+}
+.renderer-badge {
+  top: 96px;
+}
+.welcome {
+  background: rgba(15, 29, 35, 0.94);
+}
