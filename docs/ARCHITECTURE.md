@@ -31,3 +31,13 @@ Version 3 saves serialize shared lift reservations, closures, locomotion and tea
 The GPU path uses Babylon PBR materials, procedural surface textures, directional and room lighting and FXAA. A NullEngine-based CPU preview rasterizes the same geometry with a depth buffer when WebGL is unavailable. It deliberately uses simplified illumination and reduced resolution; it cannot establish PBR, shadow or GPU performance acceptance.
 
 The Babylon vendor bundle remains large (approximately 6 MB uncompressed). Real GPU profiling and production material/character work remain necessary.
+
+## Alpha 0.4 ownership changes
+
+`StairCore.ts` owns permanently present circulation envelopes and return floors. These objects are not removed with classroom sectors. `Facilities.ts` owns six connected east-concourse wings; their floor visibility follows the connection layer. Static batches preserve collision flags while reducing mesh count.
+
+`campus/plan.ts` supplies stable facility identifiers, footprints and pseudo-room routing endpoints. `Wayfinding` resolves classrooms and facilities through the same route planner. A bounded dining cohort routes into the new hall; supervisors traverse the east concourse to explicit duty stops. The broader meal and crowd systems remain simplified.
+
+`SaveRepository.ts` serializes IndexedDB transactions. Legacy v1/v2/v3 local-storage snapshots migrate on load and remain untouched. UI export/import uses validated JSON snapshots. `SaveSystem.ts` remains the schema/validation layer. fake-indexeddb is a test-only dependency.
+
+Textured boxes map UV coordinates according to face dimensions. CPU inspection now repeats PBR textures and applies approximate face shading. GPU presentation adds a bounded local character-shadow pass; it has not been visually validated on a GPU in this environment.

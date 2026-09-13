@@ -12,6 +12,8 @@ type V = { x: number; y: number; z: number; u: number; v: number };
 type Face = {
   p: V[];
   depth: number;
+  shade: number;
+  repeat: boolean;
   color: string;
   texture?: CanvasImageSource;
   tw?: number;
@@ -139,6 +141,8 @@ export class CompatibilityRenderer {
           p: screen,
           depth: poly.reduce((s, v) => s + v.z, 0) / poly.length,
           color,
+          shade: mat instanceof StandardMaterial ? 1 : shade,
+          repeat: mat instanceof PBRMaterial,
           texture: texture?.getContext().canvas as
             CanvasImageSource | undefined,
           tw: texture?.getSize().width,
@@ -195,16 +199,27 @@ export class CompatibilityRenderer {
                   ((wa * a.v) / a.z + (wb * b.v) / b.z + (wc * d.v) / d.z) * z,
                 tx = Math.max(
                   0,
-                  Math.min(tex.width - 1, Math.floor(u * tex.width)),
+                  Math.min(
+                    tex.width - 1,
+                    Math.floor(
+                      (face.repeat ? u - Math.floor(u) : u) * tex.width,
+                    ),
+                  ),
                 ),
                 ty = Math.max(
                   0,
-                  Math.min(tex.height - 1, Math.floor((1 - v) * tex.height)),
+                  Math.min(
+                    tex.height - 1,
+                    Math.floor(
+                      (face.repeat ? 1 - v - Math.floor(1 - v) : 1 - v) *
+                        tex.height,
+                    ),
+                  ),
                 ),
                 ti = (ty * tex.width + tx) * 4;
-              pixels[offset] = tex.data[ti];
-              pixels[offset + 1] = tex.data[ti + 1];
-              pixels[offset + 2] = tex.data[ti + 2];
+              pixels[offset] = tex.data[ti] * face.shade;
+              pixels[offset + 1] = tex.data[ti + 1] * face.shade;
+              pixels[offset + 2] = tex.data[ti + 2] * face.shade;
             } else {
               pixels[offset] = rgb[0];
               pixels[offset + 1] = rgb[1];

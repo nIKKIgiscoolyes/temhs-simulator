@@ -62,7 +62,20 @@ export class StaffController {
         this.role === "Campus supervisor"
           ? "Supervising the concourse"
           : "Assisting students";
-      goal = { x: -4, y, z: this.z };
+      if (this.role === "Campus supervisor") {
+        goal = { x: [-4, 100, 125, 166, 125, 100][s.stop % 6], y, z: 140 };
+        s.action =
+          s.wait > 0
+            ? {
+                1: "Welcoming visitors",
+                [-1]: "Supervising dining service",
+                [-2]: "Assisting library readers",
+                [2]: "Checking studio work",
+                [-3]: "Supervising gym",
+                [-4]: "Supporting student services",
+              }[this.floor]
+            : "Walking to facility duty";
+      } else goal = { x: -4, y, z: this.z };
     }
     if (s.wait > 0 && !passage) {
       s.wait = Math.max(0, s.wait - dt);
@@ -79,9 +92,13 @@ export class StaffController {
       };
       s.walking = move > 0.001;
     }
-    if (d < 0.1 && !passage && this.role === "Custodian") {
+    if (
+      d < 0.1 &&
+      !passage &&
+      ["Custodian", "Campus supervisor"].includes(this.role)
+    ) {
       s.stop++;
-      s.wait = 12;
+      s.wait = this.role === "Custodian" ? 12 : 20;
     }
   }
   snapshot() {

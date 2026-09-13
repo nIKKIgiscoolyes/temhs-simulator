@@ -1,7 +1,11 @@
+import { facilities } from "./campus/plan";
+import { SaveRepository } from "./core/SaveRepository";
 import {
   Engine,
   NullEngine,
   PointLight,
+  SpotLight,
+  ShadowGenerator,
   DefaultRenderingPipeline,
   Scene,
   UniversalCamera,
@@ -17,7 +21,7 @@ import {
 import { Environment } from "./architecture/Environment";
 import { GameClock, lessonPhase } from "./core/GameClock";
 import { EventBus } from "./core/EventBus";
-import { loadLocal, saveLocal, type Save } from "./core/SaveSystem";
+import { encode, decode, type Save } from "./core/SaveSystem";
 import {
   floors,
   floorAt,
@@ -47,7 +51,7 @@ import "./ui/style.css";
 import { CompatibilityRenderer } from "./rendering/CompatibilityRenderer";
 const canvas = document.querySelector<HTMLCanvasElement>("#scene")!;
 const ui = document.querySelector<HTMLDivElement>("#ui")!;
-ui.innerHTML = `<div class="hud"><div class="top"><div class="brand"><div class="eyebrow">Living campus · September 2026</div><strong>TEMHS</strong><small>Travis Elementary Middle High School</small></div><div class="clock"><div id="time" class="time">08:52</div><small id="block">Academic Pulse 1</small><small id="date">Cycle day 1 / 13</small></div></div><div id="notice" class="notice"><span class="eyebrow">Campus operations</span><div id="announcement">Instruction is in progress. Passage follows this Pulse.</div></div><div class="reticle"></div><div id="hint" class="hint hidden"></div><div id="panel" class="panel hidden"></div><div id="debug" class="debug hidden"></div><div class="bottom"><div class="location"><strong id="location">Level -2 · Deep academic core</strong><span id="activity">Observer · 1978 architecture</span></div><button data-panel="map"><span class="key">M</span>Map</button><button data-panel="schedule"><span class="key">T</span>Schedule</button><button data-panel="settings">Controls</button><button id="pause">Pause</button></div><div id="welcome" class="welcome"><div class="eyebrow">TEMHS / Living campus alpha 0.3</div><h1>A school in motion.</h1><p>Begin inside the deep academic core. Observe a lesson, follow the next Passage, and travel up to the 2021 civic floor.</p><button id="enter">Enter campus</button><small>WASD to walk · Mouse to look · E to interact<br>Desktop keyboard and mouse recommended<br>Six levels · Five districts · Original articulated characters</small></div></div>`;
+ui.innerHTML = `<div class="hud"><div class="top"><div class="brand"><div class="eyebrow">Living campus · September 2026</div><strong>TEMHS</strong><small>Travis Elementary Middle High School</small></div><div class="clock"><div id="time" class="time">08:52</div><small id="block">Academic Pulse 1</small><small id="date">Cycle day 1 / 13</small></div></div><div id="notice" class="notice"><span class="eyebrow">Campus operations</span><div id="announcement">Instruction is in progress. Passage follows this Pulse.</div></div><div class="reticle"></div><div id="hint" class="hint hidden"></div><div id="panel" class="panel hidden"></div><div id="debug" class="debug hidden"></div><div class="bottom"><div class="location"><strong id="location">Level -2 · Deep academic core</strong><span id="activity">Observer · 1978 architecture</span></div><button data-panel="map"><span class="key">M</span>Map</button><button data-panel="schedule"><span class="key">T</span>Schedule</button><button data-panel="settings">Controls</button><button id="pause">Pause</button></div><div id="welcome" class="welcome"><div class="eyebrow">TEMHS / Campus renewal alpha 0.4</div><h1>A school in motion.</h1><p>Begin inside the deep academic core. Observe a lesson, follow the next Passage, and travel up to the 2021 civic floor.</p><button id="enter">Enter campus</button><small>WASD to walk · Mouse to look · E to interact<br>Desktop keyboard and mouse recommended<br>Six levels · Five districts · Original articulated characters</small></div></div>`;
 const $ = (id: string) => document.getElementById(id)!;
 try {
   start();
@@ -94,15 +98,15 @@ function start() {
     new Vector3(0.2, 1, 0.3),
     scene,
   );
-  hemi.intensity = 1.1;
-  hemi.groundColor = new Color3(0.48, 0.46, 0.4);
+  hemi.intensity = 0.72;
+  hemi.groundColor = new Color3(0.32, 0.37, 0.38);
   const sun = new DirectionalLight(
     "daylight",
     new Vector3(-0.5, -1, 0.35),
     scene,
   );
   sun.intensity = 0.4;
-  scene.imageProcessingConfiguration.exposure = 1.15;
+  scene.imageProcessingConfiguration.exposure = 1.0;
   scene.imageProcessingConfiguration.contrast = 1.08;
   const roomLights = gpu
     ? Array.from({ length: 4 }, (_, i) => {
@@ -111,7 +115,7 @@ function start() {
           new Vector3(0, 0, 0),
           scene,
         );
-        l.diffuse = new Color3(1, 0.95, 0.84);
+        l.diffuse = new Color3(1, 0.98, 0.94);
         l.intensity = 0.75;
         l.range = 18;
         return l;
@@ -128,6 +132,29 @@ function start() {
     pipeline.samples = 1;
   }
   const env = new Environment(scene);
+  const taskLight = gpu
+    ? new SpotLight(
+        "local soft ceiling light",
+        new Vector3(0, 4, 0),
+        new Vector3(0, -1, 0),
+        Math.PI * 0.85,
+        1,
+        scene,
+      )
+    : null;
+  if (taskLight) {
+    taskLight.intensity = 1.5;
+    taskLight.diffuse = new Color3(1, 0.98, 0.94);
+    taskLight.range = 22;
+  }
+  const shadows = taskLight ? new ShadowGenerator(1024, taskLight) : null;
+  if (shadows) {
+    shadows.useBlurExponentialShadowMap = true;
+    shadows.blurKernel = 12;
+    shadows.bias = 0.002;
+    shadows.normalBias = 0.015;
+  }
+  let shadowTick = 0;
   const player = MeshBuilder.CreateBox(
     "observer collider",
     { width: 0.7, height: 1.7, depth: 0.7 },
@@ -140,6 +167,8 @@ function start() {
   clock.paused = true;
   const simulation = new CampusSimulation(clock);
   const wayfinding = new Wayfinding();
+  const saves = new SaveRepository();
+  let saving = false;
   const bus = new EventBus<string>();
   let hold = false,
     quality = "medium",
@@ -221,7 +250,7 @@ function start() {
       '<button class="close" id="close-panel" aria-label="Close panel">×</button>';
     const f = floorAt(player.position.y - 0.85);
     if (which === "map") {
-      p.innerHTML += `<div class="eyebrow">Campus wayfinding</div><h2>${f.name}</h2><svg class="map" viewBox="-130 -25 260 440" aria-label="Current floor map"><path d="M4 90 V330 M-102 140 H102" stroke="#829387" stroke-width="6" fill="none"/>${districts.map((d) => `<rect class="corridor" x="${d.x - 6}" y="${d.z}" width="12" height="130"/><text x="${d.x - 24}" y="${d.z - 8}" font-size="7">${d.name}</text>`).join("")}${rooms
+      p.innerHTML += `<div class="eyebrow">Campus wayfinding</div><h2>${f.name}</h2><svg class="map" viewBox="-130 -25 320 440" aria-label="Current floor map"><path d="M4 90 V330 M-102 140 H102" stroke="#829387" stroke-width="6" fill="none"/>${districts.map((d) => `<rect class="corridor" x="${d.x - 6}" y="${d.z}" width="12" height="130"/><text x="${d.x - 24}" y="${d.z - 8}" font-size="7">${d.name}</text>`).join("")}${rooms
         .filter((r) => r.floor === f.id)
         .map(
           (r) =>
@@ -232,7 +261,7 @@ function start() {
         .map((p) => `${p.x},${p.z}`)
         .join(
           " ",
-        )}" fill="none" stroke="#c5a151" stroke-width="2"/><circle class="you" cx="${player.position.x}" cy="${player.position.z}" r="3"/></svg><p>Five districts per level, connected by the north spine and east–west concourse. Each district has stairs at its north end and a lift at its south end.</p><div class="row"><span>Playable levels</span><span>2 · 1 · -1 · -2 · -3 · -4</span></div><p>${simulation.closures.size ? "TMAP detour: Central stairs between Floor 1 and Level -1 are closed." : "Campus routes open."}</p><label for="route-room">Find a classroom</label><select id="route-room">${rooms.map((r) => `<option value="${r.id}" ${wayfinding.destination === r.id ? "selected" : ""}>${r.id} · ${r.subject} · ${r.wing}</option>`).join("")}</select><button id="route-start">Show walking route</button><label for="visit-floor">Observer destination</label><select id="visit-floor">${floors.map((l) => `<option value="${l.id}" ${l.id === f.id ? "selected" : ""}>${l.id}: ${l.name}</option>`).join("")}</select><select id="visit-district" aria-label="Destination district">${districts.map((d) => `<option value="${d.id}">${d.name}</option>`).join("")}</select><button id="visit">Move observer to destination</button><p class="muted">Observer travel leaves student journeys unchanged. Levels -5 through -30 are outside this build.</p>`;
+        )}" fill="none" stroke="#c5a151" stroke-width="2"/><circle class="you" cx="${player.position.x}" cy="${player.position.z}" r="3"/></svg><p>Five districts per level, connected by the north spine and east–west concourse. Each district has stairs at its north end and a lift at its south end.</p><div class="row"><span>Playable levels</span><span>2 · 1 · -1 · -2 · -3 · -4</span></div><p>${simulation.closures.size ? "TMAP detour: Central stairs between Floor 1 and Level -1 are closed." : "Campus routes open."}</p><label for="route-room">Find a classroom</label><select id="route-room">${[...rooms, ...facilities.map((f) => ({ id: f.id, subject: f.name, wing: "East facilities" }))].map((r) => `<option value="${r.id}" ${wayfinding.destination === r.id ? "selected" : ""}>${r.id} · ${r.subject} · ${r.wing}</option>`).join("")}</select><button id="route-start">Show walking route</button><label for="visit-floor">Observer destination</label><select id="visit-floor">${floors.map((l) => `<option value="${l.id}" ${l.id === f.id ? "selected" : ""}>${l.id}: ${l.name}</option>`).join("")}</select><select id="visit-district" aria-label="Destination district">${districts.map((d) => `<option value="${d.id}">${d.name}</option>`).join("")}</select><button id="visit">Move observer to destination</button><p class="muted">Observer travel leaves student journeys unchanged. Levels -5 through -30 are outside this build.</p>`;
     } else if (which === "schedule") {
       p.innerHTML += `<div class="eyebrow">13-day master clock</div><h2>Cycle day ${clock.cycleDay}</h2>${upcoming(
         clock,
@@ -304,19 +333,55 @@ function start() {
         const enabled = await atmosphere.toggle();
         $("audio").textContent = enabled ? "Mute ambience" : "Enable ambience";
       };
+    if ($("save")) {
+      const exportButton = document.createElement("button");
+      exportButton.textContent = "Export save backup";
+      exportButton.onclick = () => {
+        const url = URL.createObjectURL(
+          new Blob([encode(snapshot())], { type: "application/json" }),
+        );
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = "temhs-campus-save.json";
+        a.click();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+      };
+      const importButton = document.createElement("button");
+      importButton.textContent = "Import save backup";
+      importButton.onclick = () => {
+        const input = document.createElement("input");
+        input.type = "file";
+        input.accept = ".json,application/json";
+        input.onchange = async () => {
+          try {
+            const file = input.files?.[0];
+            if (!file) return;
+            const state = decode(await file.text());
+            await saves.save(state);
+            applySave(state);
+            hidePanel();
+            bus.emit("Backup imported and saved.");
+          } catch {
+            bus.emit("Backup could not be imported. Existing save retained.");
+          }
+        };
+        input.click();
+      };
+      $("save").parentElement!.append(exportButton, importButton);
+    }
     if ($("save"))
-      $("save").onclick = () => {
+      $("save").onclick = async () => {
         try {
-          saveLocal(snapshot());
+          await saves.save(snapshot());
           bus.emit("Campus state saved in this browser.");
         } catch {
           bus.emit("Save unavailable: browser storage could not be written.");
         }
       };
     if ($("load"))
-      $("load").onclick = () => {
+      $("load").onclick = async () => {
         try {
-          const s = loadLocal();
+          const s = await saves.load();
           if (s) {
             applySave(s);
             hidePanel();
@@ -709,6 +774,22 @@ function start() {
     camera.rotation.set(pitch, yaw, 0);
     env.update(player.position.y - 0.85, player.position.x, player.position.z);
     sun.intensity = f.id > 0 ? 0.5 : 0.05;
+    if (taskLight && shadows && ++shadowTick % 15 === 0) {
+      taskLight.position.set(
+        player.position.x,
+        f.y + 4.6,
+        player.position.z + 2,
+      );
+      shadows.getShadowMap()!.renderList = scene.meshes
+        .filter(
+          (m) =>
+            m.isEnabled() &&
+            m.isVisible &&
+            m.metadata?.npc !== undefined &&
+            Vector3.Distance(m.getAbsolutePosition(), player.position) < 20,
+        )
+        .slice(0, 128);
+    }
     const nearRooms = rooms
       .filter((r) => r.floor === f.id)
       .sort(
@@ -953,13 +1034,17 @@ function start() {
         }
       }
     }
-    if (autoSave > 30 && started) {
+    if (autoSave > 30 && started && !saving) {
       autoSave = 0;
-      try {
-        saveLocal(snapshot());
-      } catch {
-        /* Manual save reports storage errors. */
-      }
+      saving = true;
+      saves
+        .save(snapshot())
+        .catch(() =>
+          bus.emit("Autosave failed. Export a backup from Controls."),
+        )
+        .finally(() => {
+          saving = false;
+        });
     }
     scene.render();
     compatibility?.render(scene, camera, performance.now());

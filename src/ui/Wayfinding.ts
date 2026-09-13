@@ -1,5 +1,6 @@
 import {
   roomById,
+  facilityRoom,
   floorAt,
   districtAt,
   rooms,
@@ -12,7 +13,7 @@ export class Wayfinding {
   path: Point[] = [];
   cursor = 0;
   setDestination(id: string, point: Point, closed: ReadonlySet<string>) {
-    const target = roomById(id);
+    const target = roomById(id) ?? facilityRoom(id);
     if (!target) return false;
     const f = floorAt(point.y),
       d = districtAt(point.x, point.z);

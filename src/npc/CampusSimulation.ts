@@ -9,6 +9,7 @@ import {
   type Room,
   districts,
   floors,
+  facilityRoom,
 } from "../campus/plan";
 import {
   identity,
@@ -261,6 +262,29 @@ export class CampusSimulation {
           a.index % 2 ? 1.4 : -1.4,
           { closed: this.closures },
         );
+        // Bounded pilot dining cohort: unique physical seats, no duplicated reservations.
+        if (dining && a.index < 72) {
+          const hall = facilityRoom("FAC-DINING")!;
+          const table = Math.floor(a.index / 6),
+            chair = {
+              x: [134, 145, 156][table % 3] + ((a.index % 3) - 1) * 1.5,
+              y: hall.y,
+              z:
+                128 +
+                Math.floor(table / 3) * 8 +
+                (a.index % 6 < 3 ? 1.2 : -1.2),
+            };
+          a.path = routeBetween(
+            from,
+            hall,
+            a.point,
+            { x: 124, y: hall.y, z: 140 },
+            a.index % 2 ? 1.4 : -1.4,
+            { closed: this.closures },
+          );
+          if (a.path.length)
+            a.path.push({ x: 124, y: hall.y, z: chair.z }, chair);
+        }
         a.cursor = 1;
         a.target = a.room;
         a.releaseAt = this.time + (releasing ? (a.index % 16) * 2 : 0);
@@ -437,8 +461,16 @@ export class CampusSimulation {
                 lateral = Math.abs(x * dz - z * dx);
               if (
                 ahead > 0.02 &&
-                ahead < 1.4 &&
-                lateral < 0.4 &&
+                ahead <
+                  1.4 +
+                    Math.max(
+                      this.ids[a.index].scale,
+                      this.ids[other.index].scale,
+                    ) *
+                      0.15 &&
+                lateral <
+                  (this.ids[a.index].scale + this.ids[other.index].scale) *
+                    0.22 &&
                 other.index < a.index
               )
                 pace = Math.min(pace, Math.max(0, (ahead - 0.6) / 0.8));

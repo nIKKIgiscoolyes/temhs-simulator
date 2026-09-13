@@ -41,3 +41,9 @@ Original source attachments remain local/reference-only. No downloaded character
 Preserved expansion commit `9d22cea`. Integrated shared observer/NPC lifts with capacity and landing interlocks; live graph routing and TMAP closure; teacher circulation, student phase actions and staff routines; v3 persistent state; bounded avatar reuse; classroom directory; hinged doors; and three focal classroom layouts. Corrected save restoration so the next frame does not reset restored doors, and prevented observer map travel during a lift journey.
 
 32 automated tests and production build pass. CPU classroom views were inspected; the 2,880-agent / 30-second simulation probe took approximately 942 ms on this host. Current browser preview access was blocked, so GPU performance and interactive traversal are open. No downloaded media or original source uploads were added. The engineering brief distinguishes implemented scope from remaining production acceptance.
+
+## Campus renewal alpha 0.4 — September 13, 2026
+
+Implemented permanent stair cores, corrected rail-post height, one-sided signs with opaque backing, physical texture repeat scale, revised materials and garment geometry, local GPU character shadows, six east facility wings, directory routes, supervisor duties and a bounded dining cohort. Added transactional IndexedDB migration and save backup UI. Preserved alpha 0.3 simulation, shared lifts, room identities and save compatibility.
+
+39 tests and production build pass. Inspected CPU classroom/stair/corridor/facility views; local browser access was rejected with ERR_BLOCKED_BY_CLIENT. Full requested visual transformation and several advanced simulation requirements remain incomplete, as enumerated in ACCEPTANCE.md. Original uploads were not added to project assets.

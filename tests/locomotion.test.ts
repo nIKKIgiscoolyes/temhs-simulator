@@ -71,7 +71,7 @@ it("preserves the old v1 player save format", () => {
   expect(decode(JSON.stringify(old)).player).toEqual(old.player);
 });
 
-it("sends meal cohorts to commons without teleporting and retains release journeys", () => {
+it("sends the pilot meal cohort to dining without teleporting and retains release journeys", () => {
   const c = new GameClock(),
     sim = new CampusSimulation(c, 32);
   const before = { ...sim.agents[0].point };
@@ -80,7 +80,7 @@ it("sends meal cohorts to commons without teleporting and retains release journe
     ["A", "B", "C"].indexOf(identity(0).meal) * 12;
   sim.update(c, 0);
   expect(sim.agents[0].point).toEqual(before);
-  expect(sim.agents[0].path.at(-1)?.z).toBeCloseTo(131.2);
+  expect(sim.agents[0].path.at(-1)?.z).toBeCloseTo(129.2);
   c.minute = blocks.find((b) => b.kind === "TERMINAL RELEASE")!.start;
   sim.update(c, 0);
   expect(sim.agents[0].point).toEqual(before);

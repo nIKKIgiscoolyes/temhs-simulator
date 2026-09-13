@@ -1,3 +1,5 @@
+import { buildFacilities } from "./Facilities";
+import { buildStairCores } from "./StairCore";
 import {
   Scene,
   MeshBuilder,
@@ -15,6 +17,7 @@ import {
   districts,
   supportRooms,
   seat,
+  classroomLayout,
   type District,
   type Room,
 } from "../campus/plan";
@@ -50,7 +53,9 @@ export class Environment {
   constructor(public scene: Scene) {
     for (const floor of floors.slice(0, 3)) this.buildFloor(floor.id);
     this.stairs();
+    buildStairCores(this);
     this.buildConnections();
+    buildFacilities(this);
     this.buildStairInspection();
   }
   private buildStairInspection() {
@@ -122,7 +127,7 @@ export class Environment {
       };
       for (let i = 0; i < 12000; i++) {
         const v = 70 + Math.floor(random() * 160);
-        c.fillStyle = `rgba(${v},${v},${v},${name.includes("terrazzo") ? 0.24 : 0.065})`;
+        c.fillStyle = `rgba(${v},${v},${v},${name.includes("terrazzo") ? 0.075 : 0.035})`;
         const size = name.includes("terrazzo")
           ? 1 + random() * 2
           : 0.5 + random();
@@ -167,8 +172,8 @@ export class Environment {
         }
       }
       tex.update();
-      tex.uScale = 3;
-      tex.vScale = 3;
+      tex.uScale = 1;
+      tex.vScale = 1;
       m.albedoColor = Color3.White();
       m.albedoTexture = tex;
     }
@@ -197,6 +202,25 @@ export class Environment {
       this.scene,
     );
     m.position.set(x, y, z);
+    // One texture repeat per metre on each physical face, independent of box aspect ratio.
+    if (mat.albedoTexture) {
+      const uv = m.getVerticesData("uv")!;
+      const faceSizes = [
+        [w, h],
+        [w, h],
+        [d, h],
+        [d, h],
+        [w, d],
+        [w, d],
+      ];
+      for (let face = 0; face < 6; face++)
+        for (let v = 0; v < 4; v++) {
+          uv[face * 8 + v * 2] *= faceSizes[face][0];
+          uv[face * 8 + v * 2 + 1] *= faceSizes[face][1];
+        }
+      m.setVerticesData("uv", uv);
+    }
+    m.receiveShadows = true;
     m.material = mat;
     m.checkCollisions = collision;
     m.parent = parent ?? null;
@@ -249,13 +273,26 @@ export class Environment {
     m.disableLighting = true;
     const plane = MeshBuilder.CreatePlane(
       "sign",
-      { width: w, height: h, sideOrientation: Mesh.DOUBLESIDE },
+      { width: w, height: h, sideOrientation: Mesh.FRONTSIDE },
       this.scene,
     );
     plane.position.set(x, y, z);
     plane.rotation.y = rotation;
     plane.material = m;
     plane.parent = parent ?? null;
+    const backing = this.box(
+      "sign backing",
+      x + Math.sin(rotation) * 0.025,
+      y,
+      z + Math.cos(rotation) * 0.025,
+      w + 0.025,
+      h + 0.025,
+      0.04,
+      this.material("sign-backing", "#243b40"),
+      parent,
+      false,
+    );
+    backing.rotation.y = rotation;
     return t;
   }
   buildFloor(id: number, district: District = districts[0]) {
@@ -274,20 +311,56 @@ export class Environment {
     const firstDoor = this.doors.length;
     const y = f.y;
     const modern = f.era === 2021;
-    const concrete = this.material("concrete", "#a29b8a", 0.9, true),
+    const concrete = this.material("concrete", "#ccd1c9", 0.9, true),
       paint = this.material("plaster", "#d5d6cb"),
-      wood = this.material("oak", "#b28a57", 0.6, true),
+      wood = this.material("oak", "#b99a72", 0.6, true),
       dark = this.material("metal", "#3d4543", 0.5),
       floor = this.material(
         modern ? "terrazzo-light" : "terrazzo-old",
-        modern ? "#c5c8bc" : "#ae9e87",
+        modern ? "#c5c8bc" : "#bac2bf",
         0.4,
         true,
       ),
-      accent = this.material("tile-rust", "#78563c", 0.55, true),
+      accent = this.material("tile-rust", "#527675", 0.55, true),
       white = this.material("white", "#e4e8df"),
       olive = this.material("olive", "#626953"),
       blue = this.material("upholstery", "#314e61");
+    for (const z of [7, 34, 61, 88]) {
+      this.box(
+        "department accent band",
+        -5.94,
+        y + 1.1,
+        z,
+        0.08,
+        0.5,
+        8,
+        this.material("sage-accent", "#648582"),
+        root,
+        false,
+      );
+      this.box(
+        "noticeboard frame",
+        5.92,
+        y + 2.1,
+        z,
+        0.08,
+        1.35,
+        2.8,
+        wood,
+        root,
+        false,
+      );
+      this.sign(
+        "TEMHS / COMMUNITY\nLEARN · CREATE · BELONG",
+        5.85,
+        y + 2.1,
+        z,
+        2.6,
+        1.15,
+        Math.PI / 2,
+        root,
+      );
+    }
     this.box("corridor slab", 0, y - 0.2, 43, 12, 0.4, 108, floor, root);
     this.box("landing", -4, y - 0.2, 127, 12, 0.4, 5, floor, root);
     this.box("return connector", -8, y - 0.2, 111, 4, 0.4, 32, floor, root);
@@ -596,6 +669,7 @@ export class Environment {
       if (merged) {
         merged.parent = root;
         merged.checkCollisions = collision;
+        merged.receiveShadows = true;
         // Root transforms are applied after local kit assembly.
       }
     }
@@ -822,7 +896,42 @@ export class Environment {
     }
     for (let i = 0; i < 16; i++) {
       const { x, z } = seat(r, i);
-      this.box("desktop", x, y + 0.85, z - 0.6, 1.7, 0.08, 0.85, wood, root);
+      const layout = classroomLayout(r);
+      const top =
+        layout === "laboratory"
+          ? this.material("lab-worktop", "#68817e", 0.55)
+          : layout === "art"
+            ? this.material("art-worktop", "#cec2a5", 0.8)
+            : wood;
+      this.box("desktop", x, y + 0.85, z - 0.6, 1.7, 0.08, 0.85, top, root);
+      if (layout === "archive")
+        this.box(
+          "document cradle",
+          x,
+          y + 0.93,
+          z - 0.6,
+          0.5,
+          0.08,
+          0.35,
+          this.mats.get("white")!,
+          root,
+          false,
+        );
+      if (layout === "art")
+        for (let pen = 0; pen < 3; pen++)
+          this.box(
+            "drawing pencil",
+            x + 0.3 + pen * 0.05,
+            y + 0.905,
+            z - 0.6,
+            0.02,
+            0.02,
+            0.24,
+            dark,
+            root,
+            false,
+          );
+
       for (const dx of [-0.68, 0.68])
         for (const dz of [-0.3, 0.3])
           this.box(
@@ -1574,7 +1683,7 @@ export class Environment {
             this.box(
               "rail post",
               x,
-              high - i - 0.2,
+              high - i + 0.55,
               97 + i * 3.5,
               0.06,
               1.1,
@@ -1610,7 +1719,7 @@ export class Environment {
       this.connections.push({ root, y: f.y });
       const floor = this.material(
           f.era === 2021 ? "terrazzo-light" : "terrazzo-old",
-          f.era === 2021 ? "#c5c8bc" : "#ae9e87",
+          f.era === 2021 ? "#c5c8bc" : "#bac2bf",
           0.4,
           true,
         ),

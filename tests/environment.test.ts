@@ -128,3 +128,44 @@ it("keeps representative classroom and cross-floor routes clear of solid archite
   }
   expect(collisions).toEqual([]);
 });
+
+it("encloses every stair core and supports body-width traversal through facilities", async () => {
+  const { districts, floors, facilities } = await import("../src/campus/plan");
+  for (const m of scene.meshes) m.computeWorldMatrix(true);
+  for (const d of districts)
+    for (const f of floors) {
+      const origin = new Vector3(d.x - 2, f.y + 1.5, d.z + 110);
+      for (const dir of [
+        new Vector3(-1, 0, 0),
+        new Vector3(1, 0, 0),
+        new Vector3(0, 0, 1),
+      ]) {
+        const hit = scene.pickWithRay(
+          new Ray(origin, dir, 24),
+          (m) => m.checkCollisions && m.isEnabled(),
+        );
+        expect(hit?.hit, `stair enclosure ${d.id}/${f.id}`).toBe(true);
+      }
+    }
+  for (const f of facilities) {
+    const root = env.connections.find((c) => c.root.name === f.id)!.root;
+    root.setEnabled(true);
+    for (const lateral of [-0.55, 0, 0.55]) {
+      const hit = scene.pickWithRay(
+        new Ray(
+          new Vector3(103, f.y + 1.2, 140 + lateral),
+          new Vector3(1, 0, 0),
+          62,
+        ),
+        (m) => m.checkCollisions && m.isEnabled(),
+      );
+      expect(hit?.hit, `facility clearance ${f.id}`).toBe(false);
+    }
+    expect(
+      scene.pickWithRay(
+        new Ray(new Vector3(150, f.y + 1, 140), Vector3.Down(), 2),
+        (m) => m.checkCollisions && m.isEnabled(),
+      )?.hit,
+    ).toBe(true);
+  }
+});

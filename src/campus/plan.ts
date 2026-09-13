@@ -142,11 +142,30 @@ export function districtAt(x: number, z: number) {
       : a,
   );
 }
+export function classroomLayout(room: Room) {
+  if (room.id === "F1-101" || room.subject === "Seminar") return "seminar";
+  if (/Biology|Biomedical|Chemistry/.test(room.subject)) return "laboratory";
+  if (room.subject === "Technology") return "technology";
+  if (room.subject === "Art") return "art";
+  if (/Civic|History/.test(room.subject)) return "archive";
+  return "general";
+}
 export function seat(room: Room, index: number): Point {
+  const layout = classroomLayout(room);
+  const spacing =
+    layout === "seminar"
+      ? 2.9
+      : layout === "laboratory"
+        ? 2.75
+        : layout === "art"
+          ? 2.85
+          : 2.65;
+  const rowDepth =
+    layout === "seminar" ? 3 : layout === "technology" ? 2.9 : 2.6;
   return {
-    x: room.x + ((index % 4) - 1.5) * (room.id === "F1-101" ? 2.9 : 2.65),
+    x: room.x + ((index % 4) - 1.5) * spacing,
     y: room.y,
-    z: room.z - 6 + Math.floor(index / 4) * (room.id === "F1-101" ? 3 : 2.6),
+    z: room.z - 6 + Math.floor(index / 4) * rowDepth,
   };
 }
 export const lift = { x: 3, y: 0, z: -10 };
@@ -181,4 +200,67 @@ export function allowed(
     (access === "RESTRICTED" && role === "staff") ||
     (access === "UTILITY" && role === "facilities")
   );
+}
+
+/** New east-concourse facilities: stable identifiers and explicit routing entrances. */
+export const facilities = [
+  {
+    id: "FAC-RECEPTION",
+    name: "Reception & welcome center",
+    floor: 1,
+    kind: "reception",
+  },
+  {
+    id: "FAC-DINING",
+    name: "Dining hall & serving court",
+    floor: -1,
+    kind: "dining",
+  },
+  {
+    id: "FAC-LIBRARY",
+    name: "Library & media center",
+    floor: -2,
+    kind: "library",
+  },
+  {
+    id: "FAC-SCIENCE",
+    name: "Science & technology studio",
+    floor: 2,
+    kind: "science",
+  },
+  { id: "FAC-GYM", name: "Gym & changing suite", floor: -3, kind: "gym" },
+  {
+    id: "FAC-SERVICES",
+    name: "Student services center",
+    floor: -4,
+    kind: "services",
+  },
+].map((f) => ({
+  ...f,
+  floor: f.floor as FloorId,
+  x: 150,
+  z: 140,
+  y: floors.find((l) => l.id === f.floor)!.y,
+  width: 60,
+  depth: 40,
+  door: { x: 120, y: floors.find((l) => l.id === f.floor)!.y, z: 140 },
+}));
+export function facilityRoom(id: string): Room | undefined {
+  const f = facilities.find((f) => f.id === id);
+  if (!f) return;
+  return {
+    id: f.id,
+    floor: f.floor,
+    x: f.x,
+    z: f.z,
+    y: f.y,
+    subject: f.name,
+    capacity: 80,
+    access: "ACADEMIC",
+    era: f.floor > 0 ? 2021 : 1978,
+    teacher: "",
+    door: f.door,
+    wing: "East facilities",
+    district: "east",
+  };
 }

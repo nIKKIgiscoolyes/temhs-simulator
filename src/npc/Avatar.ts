@@ -181,6 +181,27 @@ export class Avatar {
         y,
         z,
       );
+    const limb = (
+      name: string,
+      width: number,
+      length: number,
+      depth: number,
+      mat: PBRMaterial,
+      parent: TransformNode,
+    ) => {
+      const m = MeshBuilder.CreateCylinder(
+        name,
+        {
+          height: length,
+          diameterTop: width,
+          diameterBottom: width * 0.88,
+          tessellation: 12,
+        },
+        scene,
+      );
+      m.scaling.z = depth / width;
+      return add(m, parent, mat, 0, -length / 2, 0);
+    };
     const torso = MeshBuilder.CreateLathe(
       "tailored torso",
       {
@@ -199,6 +220,7 @@ export class Avatar {
     );
     torso.scaling.z = 0.72;
     add(torso, this.body, shirt, 0, 0, 0);
+    ell("trouser seat", 0, 0.79, 0, 0.37, 0.2, 0.29, pants);
     ell("neck", 0, 1.43, 0, 0.15, 0.22, 0.17, fur);
     box("placket", 0, 1.15, 0.164, 0.025, 0.41, 0.015, adult ? trim : shirt);
     for (let k = 0; k < 4; k++)
@@ -398,11 +420,11 @@ export class Avatar {
       arm.parent = this.body;
       arm.position.set(side * 0.245, 1.29, 0);
       ell("shoulder sleeve", 0, -0.11, 0, 0.19, 0.27, 0.2, shirt, arm);
-      ell("upper sleeve", 0, -0.2, 0, 0.155, 0.31, 0.16, shirt, arm);
+      limb("shaped upper sleeve", 0.17, 0.34, 0.18, shirt, arm);
       const fore = new TransformNode("elbow", scene);
       fore.parent = arm;
       fore.position.y = -0.31;
-      ell("forearm sleeve", 0, -0.14, 0, 0.135, 0.27, 0.145, shirt, fore);
+      limb("shaped forearm sleeve", 0.145, 0.29, 0.155, shirt, fore);
       box("cuff", 0, -0.26, 0, 0.14, 0.045, 0.15, trim, fore);
       ell("paw palm", 0, -0.32, 0.025, 0.115, 0.13, 0.08, fur, fore);
       for (let j = 0; j < 3; j++)
@@ -422,11 +444,11 @@ export class Avatar {
       const hip = new TransformNode("hip", scene);
       hip.parent = this.body;
       hip.position.set(side * 0.115, 0.8, 0);
-      ell("thigh", 0, -0.2, 0, 0.205, 0.43, 0.22, pants, hip);
+      limb("tailored trouser thigh", 0.215, 0.43, 0.235, pants, hip);
       const knee = new TransformNode("knee", scene);
       knee.parent = hip;
       knee.position.y = -0.4;
-      ell("lower trouser", 0, -0.16, 0, 0.145, 0.35, 0.16, pants, knee);
+      limb("tailored trouser calf", 0.17, 0.36, 0.19, pants, knee);
       ell("shoe", 0, -0.345, 0.065, 0.18, 0.135, 0.31, black, knee);
       box("shoe sole", 0, -0.395, 0.065, 0.185, 0.04, 0.31, black, knee);
       this.legs.push(hip);
@@ -516,6 +538,10 @@ export class Avatar {
           merged.isPickable = false;
         }
       }
+    }
+    for (const mesh of this.root.getChildMeshes()) {
+      mesh.metadata = { npc: index };
+      mesh.receiveShadows = true;
     }
     this.root.scaling.setAll(npc.scale);
   }
