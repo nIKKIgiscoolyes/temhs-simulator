@@ -32,6 +32,8 @@ export class Avatar {
   private seatedBlend = 0;
   private poseTime = 0;
   private initialized = false;
+  private stridePhase = 0;
+  private lastPosition: Vector3 | null = null;
   constructor(scene: Scene, env: Environment, index: number) {
     this.index = index;
     const npc = identity(index),
@@ -527,9 +529,15 @@ export class Avatar {
     this.seatedBlend +=
       (Number(seated) - this.seatedBlend) * Math.min(1, dt * 7);
     const b = this.seatedBlend,
-      phase = time * 6.7 + this.index;
+      movement = this.lastPosition
+        ? Vector3.Distance(this.root.position, this.lastPosition)
+        : 0;
+    this.lastPosition = this.root.position.clone();
+    if (walking && movement < 5)
+      this.stridePhase += (movement / this.root.scaling.y) * 4.5;
+    const phase = this.stridePhase + this.index;
     this.body.position.y =
-      -0.34 * b +
+      (0.46 / this.root.scaling.y - 0.8) * b +
       (1 - b) *
         (walking
           ? Math.sin(phase * 2) * 0.012
@@ -545,7 +553,22 @@ export class Avatar {
         -0.15 * (1 - b) - 0.5 * b - stride * 0.32 * (1 - b);
       this.arms[i].rotation.z = (i === 0 ? 1 : -1) * 0.06;
       this.forearms[i].rotation.x = -1.05 * b - 0.1 * (1 - b);
+      this.forearms[i].rotation.y = 0;
       if (seated) {
+        if (this.gesture === "reading") {
+          this.arms[i].rotation.x = -0.6;
+          this.forearms[i].rotation.x = -1.2;
+        }
+        if (this.gesture === "typing") {
+          this.arms[i].rotation.x = -0.7;
+          this.forearms[i].rotation.x =
+            -0.75 + Math.sin(time * 7 + i * Math.PI) * 0.04;
+        }
+        if (this.gesture === "listening") {
+          this.arms[i].rotation.x = -0.2;
+          this.forearms[i].rotation.x = -0.6;
+        }
+
         if (this.gesture === "writing")
           this.forearms[i].rotation.y =
             i === 1 ? Math.sin(time * 3 + this.index) * 0.06 : 0;

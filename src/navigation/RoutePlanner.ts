@@ -1,4 +1,12 @@
-import { districts, type Point, type Room } from "../campus/plan";
+import {
+  districts,
+  floors,
+  rooms,
+  districtAt,
+  floorAt,
+  type Point,
+  type Room,
+} from "../campus/plan";
 export interface Edge {
   to: string;
   cost: number;
@@ -36,72 +44,146 @@ export function shortestPath(
   }
   return [];
 }
+export interface RouteOptions {
+  closed?: ReadonlySet<string>;
+}
+export const stairEdge = (district: string, highY: number) =>
+  `stairs:${district}:${highY}`;
+type Link = Edge & { id: string; points: Point[] };
+const graphs = new Map<number, Record<string, Link[]>>();
+function campusGraph(lane: number) {
+  if (graphs.has(lane)) return graphs.get(lane)!;
+  const graph: Record<string, Link[]> = {};
+  const key = (floor: number, district: string) => `${floor}:${district}`;
+  const anchor = (y: number, d: (typeof districts)[number]): Point => ({
+    x: d.x + lane,
+    y,
+    z: d.z + 45,
+  });
+  const connect = (a: string, b: string, id: string, points: Point[]) => {
+    const cost = points
+      .slice(1)
+      .reduce((n, p, i) => n + distance(points[i], p), 0);
+    graph[a].push({ to: b, id, cost, points });
+    graph[b].push({ to: a, id, cost, points: [...points].reverse() });
+  };
+  for (const f of floors)
+    for (const d of districts) graph[key(f.id, d.id)] = [];
+  for (const f of floors) {
+    const y = f.y;
+    const central = districts[0],
+      north = districts[1];
+    for (const d of districts.slice(1, 4)) {
+      const path = [
+        anchor(y, central),
+        { x: 4, y, z: 90 },
+        { x: 4, y, z: 140 },
+        { x: d.x + lane, y, z: 140 },
+        anchor(y, d),
+      ];
+      connect(
+        key(f.id, "central"),
+        key(f.id, d.id),
+        `concourse:${f.id}:${d.id}`,
+        path,
+      );
+    }
+    connect(key(f.id, "north"), key(f.id, "far-north"), `spine:${f.id}`, [
+      anchor(y, north),
+      { x: 4, y, z: 240 },
+      { x: 4, y, z: 293 },
+      anchor(y, districts[4]),
+    ]);
+    for (const d of districts) {
+      const low = floors.find((l) => l.y === y - 8);
+      if (!low) continue;
+      connect(key(f.id, d.id), key(low.id, d.id), stairEdge(d.id, y), [
+        anchor(y, d),
+        { x: d.x - 2, y, z: d.z + 97 },
+        { x: d.x - 2, y: y - 8, z: d.z + 125 },
+        { x: d.x - 8, y: y - 8, z: d.z + 127 },
+        { x: d.x - 8, y: y - 8, z: d.z + 98 },
+        { x: d.x + lane, y: y - 8, z: d.z + 98 },
+        anchor(y - 8, d),
+      ]);
+    }
+  }
+  graphs.set(lane, graph);
+  return graph;
+}
 export function routeBetween(
   a: Room,
   b: Room,
   start: Point,
   end: Point,
   lane = 0,
+  options: RouteOptions = {},
 ): Point[] {
-  const da = districts.find((d) => d.id === a.district) ?? districts[0],
-    db = districts.find((d) => d.id === b.district) ?? districts[0];
-  const p: Point[] = [
-    start,
-    { x: a.x + (a.x < da.x ? 5.4 : -5.4), y: a.y, z: start.z },
-    { x: a.x + (a.x < da.x ? 5.4 : -5.4), y: a.y, z: a.door.z },
-    { ...a.door },
-    { x: da.x + lane, y: a.y, z: a.door.z },
-  ];
-  if (a.floor !== b.floor) {
-    const step = Math.sign(b.y - a.y) * 8;
-    for (let y = a.y; y !== b.y; y += step) {
-      const high = Math.max(y, y + step);
-      if (step < 0)
-        p.push(
-          { x: da.x - 2, y: high, z: da.z + 97 },
-          { x: da.x - 2, y: high - 8, z: da.z + 125 },
-          { x: da.x - 8, y: high - 8, z: da.z + 127 },
-          { x: da.x - 8, y: high - 8, z: da.z + 98 },
-          { x: da.x + lane, y: high - 8, z: da.z + 98 },
-        );
-      else
-        p.push(
-          { x: da.x + lane, y, z: da.z + 98 },
-          { x: da.x - 8, y, z: da.z + 98 },
-          { x: da.x - 8, y, z: da.z + 127 },
-          { x: da.x - 2, y, z: da.z + 125 },
-          { x: da.x - 2, y: high, z: da.z + 97 },
-        );
-    }
-  }
-  if (da.id !== db.id) {
-    const exit = (d: typeof da, y: number): Point[] =>
-      d.id === "central"
-        ? [
-            { x: 4, y, z: 90 },
-            { x: 4, y, z: 140 },
-          ]
-        : d.id === "far-north"
-          ? [
-              { x: 0, y, z: 293 },
-              { x: 4, y, z: 293 },
-              { x: 4, y, z: 140 },
-            ]
-          : [
-              { x: d.x + lane, y, z: 143 },
-              { x: d.x + lane, y, z: 140 },
-              { x: 4, y, z: 140 },
-            ];
-    p.push(...exit(da, b.y), ...exit(db, b.y).reverse());
-  }
-  p.push(
-    { x: db.x + lane, y: b.y, z: b.door.z },
-    { ...b.door },
-    { x: b.x + (b.x < db.x ? 5.4 : -5.4), y: b.y, z: b.door.z },
-    { x: b.x + (b.x < db.x ? 5.4 : -5.4), y: b.y, z: end.z },
-    end,
+  const f = floorAt(start.y);
+  // A delayed person may already be in a corridor, commons or different floor.
+  const actualRoom = rooms.find(
+    (r) =>
+      r.floor === f.id &&
+      Math.abs(r.x - start.x) < 7.5 &&
+      Math.abs(r.z - start.z) < 11.9,
   );
-  return p;
+  const da = actualRoom
+    ? districts.find((d) => d.id === actualRoom.district)!
+    : districtAt(start.x, start.z);
+  const db = districts.find((d) => d.id === b.district) ?? districts[0];
+  const graph = campusGraph(lane);
+  const filtered = Object.fromEntries(
+    Object.entries(graph).map(([id, edges]) => [
+      id,
+      edges.map((e) => ({ ...e, closed: options.closed?.has(e.id) })),
+    ]),
+  );
+  const nodes = shortestPath(
+    filtered,
+    `${f.id}:${da.id}`,
+    `${b.floor}:${db.id}`,
+  );
+  if (!nodes.length) return [];
+  const p: Point[] = [{ ...start }];
+  if (actualRoom) {
+    const aisle = actualRoom.x + (actualRoom.x < da.x ? 5.4 : -5.4);
+    p.push(
+      { x: aisle, y: f.y, z: start.z },
+      { x: aisle, y: f.y, z: actualRoom.door.z },
+      { ...actualRoom.door },
+    );
+  }
+  // Connector users first follow their current spine/concourse, avoiding a diagonal through rooms.
+  if (
+    !actualRoom &&
+    Math.abs(start.x - da.x) > 6 &&
+    start.z > 128 &&
+    start.z < 151
+  )
+    p.push({ x: start.x, y: f.y, z: 140 }, { x: da.x + lane, y: f.y, z: 140 });
+  p.push({ x: da.x + lane, y: f.y, z: actualRoom?.door.z ?? start.z });
+  if (nodes.length > 1) {
+    p.push({ x: da.x + lane, y: f.y, z: da.z + 45 });
+    for (let i = 1; i < nodes.length; i++)
+      p.push(
+        ...graph[nodes[i - 1]]
+          .find((e) => e.to === nodes[i] && !options.closed?.has(e.id))!
+          .points.slice(1),
+      );
+  }
+  p.push({ x: db.x + lane, y: b.y, z: b.door.z }, { ...b.door });
+  // Only real classroom destinations require a furniture aisle.
+  if (
+    distance(b.door, end) > 2 &&
+    rooms.some(
+      (r) => r.id === b.id && r.door.x === b.door.x && r.door.z === b.door.z,
+    )
+  ) {
+    const aisle = b.x + (b.x < db.x ? 5.4 : -5.4);
+    p.push({ x: aisle, y: b.y, z: b.door.z }, { x: aisle, y: b.y, z: end.z });
+  }
+  p.push({ ...end });
+  return p.filter((v, i) => i === 0 || distance(v, p[i - 1]) > 0.001);
 }
 export function distance(a: Point, b: Point) {
   return Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z);

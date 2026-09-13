@@ -1,6 +1,7 @@
 import { it, expect } from "vitest";
 import { GameClock, blocks } from "../src/core/GameClock";
 import { CampusSimulation } from "../src/npc/CampusSimulation";
+import { identity } from "../src/npc/NPCScheduler";
 import { decode, encode, type Save } from "../src/core/SaveSystem";
 it("keeps an agent in transit when the next Pulse starts", () => {
   const c = new GameClock();
@@ -74,12 +75,14 @@ it("sends meal cohorts to commons without teleporting and retains release journe
   const c = new GameClock(),
     sim = new CampusSimulation(c, 32);
   const before = { ...sim.agents[0].point };
-  c.minute = blocks.find((b) => b.kind === "MEAL ROTATION")!.start;
+  c.minute =
+    blocks.find((b) => b.kind === "MEAL ROTATION")!.start +
+    ["A", "B", "C"].indexOf(identity(0).meal) * 12;
   sim.update(c, 0);
   expect(sim.agents[0].point).toEqual(before);
-  expect(sim.agents[0].path.at(-1)?.z).toBe(132);
+  expect(sim.agents[0].path.at(-1)?.z).toBeCloseTo(131.2);
   c.minute = blocks.find((b) => b.kind === "TERMINAL RELEASE")!.start;
   sim.update(c, 0);
   expect(sim.agents[0].point).toEqual(before);
-  expect(sim.agents[0].path.at(-1)?.z).toBe(-17);
+  expect(sim.agents[0].path.at(-1)).toEqual({ x: -2, y: 0, z: -10 });
 });

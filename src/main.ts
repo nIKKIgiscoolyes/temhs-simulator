@@ -12,6 +12,7 @@ import {
   DirectionalLight,
   MeshBuilder,
   TransformNode,
+  Ray,
 } from "@babylonjs/core";
 import { Environment } from "./architecture/Environment";
 import { GameClock, lessonPhase } from "./core/GameClock";
@@ -27,6 +28,14 @@ import {
 } from "./campus/plan";
 import { Atmosphere } from "./audio/Atmosphere";
 import { CampusSimulation } from "./npc/CampusSimulation";
+import {
+  TeacherController,
+  isSeatedActivity,
+  atSeat,
+} from "./npc/ClassroomController";
+import { StaffController } from "./npc/StaffController";
+import { Wayfinding } from "./ui/Wayfinding";
+import { AvatarPool } from "./rendering/AvatarPool";
 import { Avatar } from "./npc/Avatar";
 import {
   ACTIVE_STUDENTS,
@@ -38,7 +47,7 @@ import "./ui/style.css";
 import { CompatibilityRenderer } from "./rendering/CompatibilityRenderer";
 const canvas = document.querySelector<HTMLCanvasElement>("#scene")!;
 const ui = document.querySelector<HTMLDivElement>("#ui")!;
-ui.innerHTML = `<div class="hud"><div class="top"><div class="brand"><div class="eyebrow">Living campus · September 2026</div><strong>TEMHS</strong><small>Travis Elementary Middle High School</small></div><div class="clock"><div id="time" class="time">08:52</div><small id="block">Academic Pulse 1</small><small id="date">Cycle day 1 / 13</small></div></div><div id="notice" class="notice"><span class="eyebrow">Campus operations</span><div id="announcement">Instruction is in progress. Passage follows this Pulse.</div></div><div class="reticle"></div><div id="hint" class="hint hidden"></div><div id="panel" class="panel hidden"></div><div id="debug" class="debug hidden"></div><div class="bottom"><div class="location"><strong id="location">Level -2 · Deep academic core</strong><span id="activity">Observer · 1978 architecture</span></div><button data-panel="map"><span class="key">M</span>Map</button><button data-panel="schedule"><span class="key">T</span>Schedule</button><button data-panel="settings">Controls</button><button id="pause">Pause</button></div><div id="welcome" class="welcome"><div class="eyebrow">TEMHS / Expansion alpha 0.2</div><h1>A school in motion.</h1><p>Begin inside the deep academic core. Observe a lesson, follow the next Passage, and travel up to the 2021 civic floor.</p><button id="enter">Enter campus</button><small>WASD to walk · Mouse to look · E to interact<br>Desktop keyboard and mouse recommended<br>Six levels · Five districts · Original articulated characters</small></div></div>`;
+ui.innerHTML = `<div class="hud"><div class="top"><div class="brand"><div class="eyebrow">Living campus · September 2026</div><strong>TEMHS</strong><small>Travis Elementary Middle High School</small></div><div class="clock"><div id="time" class="time">08:52</div><small id="block">Academic Pulse 1</small><small id="date">Cycle day 1 / 13</small></div></div><div id="notice" class="notice"><span class="eyebrow">Campus operations</span><div id="announcement">Instruction is in progress. Passage follows this Pulse.</div></div><div class="reticle"></div><div id="hint" class="hint hidden"></div><div id="panel" class="panel hidden"></div><div id="debug" class="debug hidden"></div><div class="bottom"><div class="location"><strong id="location">Level -2 · Deep academic core</strong><span id="activity">Observer · 1978 architecture</span></div><button data-panel="map"><span class="key">M</span>Map</button><button data-panel="schedule"><span class="key">T</span>Schedule</button><button data-panel="settings">Controls</button><button id="pause">Pause</button></div><div id="welcome" class="welcome"><div class="eyebrow">TEMHS / Living campus alpha 0.3</div><h1>A school in motion.</h1><p>Begin inside the deep academic core. Observe a lesson, follow the next Passage, and travel up to the 2021 civic floor.</p><button id="enter">Enter campus</button><small>WASD to walk · Mouse to look · E to interact<br>Desktop keyboard and mouse recommended<br>Six levels · Five districts · Original articulated characters</small></div></div>`;
 const $ = (id: string) => document.getElementById(id)!;
 try {
   start();
@@ -130,6 +139,7 @@ function start() {
   const clock = new GameClock();
   clock.paused = true;
   const simulation = new CampusSimulation(clock);
+  const wayfinding = new Wayfinding();
   const bus = new EventBus<string>();
   let hold = false,
     quality = "medium",
@@ -141,10 +151,15 @@ function start() {
     lastBoard = "",
     autoSave = 0,
     walkTime = 0;
+  let verticalSpeed = 0;
   let yaw = Math.PI,
     pitch = 0;
   const keys = new Set<string>();
+  const avatarPool = new AvatarPool(scene, env);
   let avatars = new Map<number, Avatar>();
+  const teacherControllers = new Map(
+    rooms.map((r) => [r.id, new TeacherController(r)]),
+  );
   const teachers = new Map<
     string,
     { avatar: Avatar; room: (typeof rooms)[number] }
@@ -160,9 +175,12 @@ function start() {
         z: 157,
       },
     ])
-    .map((s) => ({ ...s, avatar: new Avatar(scene, env, s.index) }));
-  let elevator: { from: number; to: number; t: number } | null = null;
-  let liftOpen = false;
+    .map((s) => ({
+      ...s,
+      avatar: new Avatar(scene, env, s.index),
+      controller: new StaffController(s.index, s.role, s.floor, s.z),
+    }));
+  let elevator: { bank: string } | null = null;
   let liftDistrict: (typeof districts)[number] = districts[0];
   const cabin = new TransformNode("moving lift cabin", scene);
   const cabinMat = env.mats.get("metal")!;
@@ -170,7 +188,17 @@ function start() {
   env.box("cabin back", 3, 2.5, -14, 6, 5, 0.2, cabinMat, cabin);
   env.box("cabin side", 0, 2.5, -11, 0.2, 5, 6, cabinMat, cabin);
   env.box("cabin side", 6, 2.5, -11, 0.2, 5, 6, cabinMat, cabin);
-  env.box("cabin front", 3, 2.5, -8, 6, 5, 0.2, cabinMat, cabin);
+  const cabinFront = env.box(
+    "cabin front",
+    3,
+    2.5,
+    -8,
+    6,
+    5,
+    0.2,
+    cabinMat,
+    cabin,
+  );
   cabin.setEnabled(false);
   function announce(message: string) {
     $("announcement").textContent = message;
@@ -199,9 +227,12 @@ function start() {
           (r) =>
             `<rect class="room" x="${r.x - 8}" y="${r.z - 11}" width="16" height="22"/>`,
         )
+        .join("")}<polyline points="${wayfinding.path
+        .filter((p) => Math.abs(p.y - f.y) < 0.1)
+        .map((p) => `${p.x},${p.z}`)
         .join(
-          "",
-        )}<circle class="you" cx="${player.position.x}" cy="${player.position.z}" r="3"/></svg><p>Five districts per level, connected by the north spine and east–west concourse. Each district has stairs at its north end and a lift at its south end.</p><div class="row"><span>Playable levels</span><span>2 · 1 · -1 · -2 · -3 · -4</span></div><label for="visit-floor">Observer destination</label><select id="visit-floor">${floors.map((l) => `<option value="${l.id}" ${l.id === f.id ? "selected" : ""}>${l.id}: ${l.name}</option>`).join("")}</select><select id="visit-district" aria-label="Destination district">${districts.map((d) => `<option value="${d.id}">${d.name}</option>`).join("")}</select><button id="visit">Move observer to destination</button><p class="muted">Observer travel leaves student journeys unchanged. Levels -5 through -30 are outside this build.</p>`;
+          " ",
+        )}" fill="none" stroke="#c5a151" stroke-width="2"/><circle class="you" cx="${player.position.x}" cy="${player.position.z}" r="3"/></svg><p>Five districts per level, connected by the north spine and east–west concourse. Each district has stairs at its north end and a lift at its south end.</p><div class="row"><span>Playable levels</span><span>2 · 1 · -1 · -2 · -3 · -4</span></div><p>${simulation.closures.size ? "TMAP detour: Central stairs between Floor 1 and Level -1 are closed." : "Campus routes open."}</p><label for="route-room">Find a classroom</label><select id="route-room">${rooms.map((r) => `<option value="${r.id}" ${wayfinding.destination === r.id ? "selected" : ""}>${r.id} · ${r.subject} · ${r.wing}</option>`).join("")}</select><button id="route-start">Show walking route</button><label for="visit-floor">Observer destination</label><select id="visit-floor">${floors.map((l) => `<option value="${l.id}" ${l.id === f.id ? "selected" : ""}>${l.id}: ${l.name}</option>`).join("")}</select><select id="visit-district" aria-label="Destination district">${districts.map((d) => `<option value="${d.id}">${d.name}</option>`).join("")}</select><button id="visit">Move observer to destination</button><p class="muted">Observer travel leaves student journeys unchanged. Levels -5 through -30 are outside this build.</p>`;
     } else if (which === "schedule") {
       p.innerHTML += `<div class="eyebrow">13-day master clock</div><h2>Cycle day ${clock.cycleDay}</h2>${upcoming(
         clock,
@@ -214,11 +245,30 @@ function start() {
           "",
         )}<p>Meal groups rotate separately. Northward Release staggers movement. Still Bell V holds classrooms.</p><p class="muted">Bell times are editable development defaults, not established TEMHS canon.</p><div class="actions"><button id="next">Next block</button><button id="hold">${hold ? "Release" : "Activate"} Still Bell V</button></div>`;
     } else if (which === "settings") {
-      p.innerHTML += `<div class="eyebrow">Observer controls</div><h2>Explore TEMHS</h2><div class="row"><span>Walk / brisk walk</span><span>WASD / Shift</span></div><div class="row"><span>Look / release mouse</span><span>Mouse / Esc</span></div><div class="row"><span>Alternative look</span><span>Arrow keys</span></div><div class="row"><span>Door, lift, citizen</span><span>E</span></div><div class="row"><span>Diagnostics</span><span>F3</span></div><div class="row"><label for="speed">Clock speed</label><select id="speed"><option value="1">Real time</option><option value="10">10×</option><option value="60">60×</option></select></div><div class="row"><label for="quality">Graphics</label><select id="quality"><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option></select></div><div class="actions"><button id="audio">Enable ambience</button><button id="save">Save</button><button id="load">Load save</button><button id="tour">Guided Passage</button></div><p class="muted">Saves stay in this browser. Original articulated animal models. Saves include journeys and queues. Compatibility mode uses reduced detail.</p>`;
+      p.innerHTML += `<div class="eyebrow">Observer controls</div><h2>Explore TEMHS</h2><div class="row"><span>Walk / brisk walk</span><span>WASD / Shift</span></div><div class="row"><span>Look / release mouse</span><span>Mouse / Esc</span></div><div class="row"><span>Alternative look</span><span>Arrow keys</span></div><div class="row"><span>Door, lift, citizen</span><span>E</span></div><div class="row"><span>Diagnostics</span><span>F3</span></div><div class="row"><label for="speed">Clock speed</label><select id="speed"><option value="1">Real time</option><option value="10">10×</option><option value="60">60×</option></select></div><div class="row"><label for="quality">Graphics</label><select id="quality"><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option></select></div><div class="actions"><button id="audio">Enable ambience</button><button id="save">Save</button><button id="load">Load save</button><button id="tour">Guided Passage</button><button id="tmapping">${simulation.closures.size ? "Reopen central stairs" : "TMAP stair detour"}</button></div><p class="muted">Saves stay in this browser. Original articulated animal models. Saves include journeys and queues. Compatibility mode uses reduced detail.</p>`;
     } else if (which === "lift") {
       p.innerHTML += `<div class="eyebrow">Central passenger lift</div><h2>Select destination</h2><div class="lift">${[2, 1, -1, -2, -3, -4].map((id) => `<button data-floor="${id}" ${!floors.some((f) => f.id === id) ? "disabled" : ""}>${id}</button>`).join("")}</div><p>Levels -5 through -30 require authorized transfer and are outside this build.</p>`;
     }
     $("close-panel").onclick = hidePanel;
+    if ($("route-start"))
+      $("route-start").onclick = () => {
+        const id = ($("route-room") as HTMLSelectElement).value;
+        const ok = wayfinding.setDestination(
+          id,
+          {
+            x: player.position.x,
+            y: player.position.y - 0.85,
+            z: player.position.z,
+          },
+          simulation.closures,
+        );
+        bus.emit(
+          ok
+            ? `Walking route to ${id} is shown in gold on the map.`
+            : "No route is available. Ask campus staff for directions.",
+        );
+        showPanel("map");
+      };
     if ($("next"))
       $("next").onclick = () => {
         clock.next();
@@ -276,10 +326,34 @@ function start() {
           bus.emit(String(e));
         }
       };
+    if ($("tmapping"))
+      $("tmapping").onclick = () => {
+        const closed = !simulation.closures.has("stairs:central:0");
+        simulation.setClosure("stairs:central:0", closed);
+        env.setStairClosure(closed);
+        if (wayfinding.destination)
+          wayfinding.setDestination(
+            wayfinding.destination,
+            {
+              x: player.position.x,
+              y: player.position.y - 0.85,
+              z: player.position.z,
+            },
+            simulation.closures,
+          );
+        bus.emit(
+          closed
+            ? "TMAP inspection: Floor 1 / Level -1 central stair closed. Use the lift or another district stair."
+            : "Central stair inspection complete. Normal routes restored.",
+        );
+        showPanel("settings");
+      };
     if ($("tour"))
       $("tour").onclick = () => {
         clock.minute = 534.7;
         simulation.reset(clock);
+        elevator = null;
+        env.setStairClosure(false);
         clock.speed = 10;
         clock.paused = false;
         hold = false;
@@ -293,6 +367,10 @@ function start() {
     const visit = p.querySelector<HTMLButtonElement>("#visit");
     if (visit)
       visit.onclick = () => {
+        if (elevator) {
+          bus.emit("Finish the lift journey before observer travel.");
+          return;
+        }
         const level = floors.find(
           (l) =>
             l.id ===
@@ -319,44 +397,26 @@ function start() {
           const target = floors.find((f) => f.id === Number(b.dataset.floor))!;
           if (target.id === f.id) {
             hidePanel();
-            setLiftOpen(true);
             return;
           }
-          if (
-            !env.sectors.some((s) => s.id === `${target.id}:${liftDistrict.id}`)
-          )
-            env.buildFloor(target.id, liftDistrict);
-          elevator = { from: f.y, to: target.y, t: 0 };
-          player.position.set(
-            liftDistrict.x + 3,
-            f.y + 0.85,
-            liftDistrict.z - 11,
-          );
-          cabin.position.x = liftDistrict.x;
-          cabin.position.z = liftDistrict.z;
-          setLiftOpen(false);
-          cabin.position.y = f.y;
-          cabin.setEnabled(true);
+          const l = simulation.lifts.find(
+            (l) => l.state.bank === liftDistrict.id,
+          )!;
+          l.request("observer", f.id, target.id);
+          elevator = { bank: liftDistrict.id };
           hidePanel();
           bus.emit(
-            `Lift travelling to ${target.id > 0 ? "Floor" : "Level"} ${target.id}.`,
+            `Waiting for the ${liftDistrict.name} lift to ${target.id}.`,
           );
         }),
     );
   }
-  function setLiftOpen(open: boolean) {
-    liftOpen = open;
-    for (const d of env.liftDoors) {
-      const base = d.metadata.baseX;
-      const bankOpen = open && d.metadata.district === liftDistrict.id;
-      d.position.x = base + (bankOpen ? (base < 3 ? -2.9 : 2.9) : 0);
-      d.checkCollisions = !bankOpen;
-    }
-  }
   function snapshot(): Save {
     return {
-      version: 2,
+      version: 3,
       simulation: simulation.snapshot(),
+      teachers: [...teacherControllers.values()].map((t) => t.snapshot()),
+      staff: staff.map((s) => s.controller.snapshot()),
       seed: 20260907,
       day: clock.day,
       minute: clock.minute,
@@ -379,6 +439,7 @@ function start() {
     clock.minute = s.minute;
     clock.speed = s.speed;
     player.position.copyFromFloats(s.player.x, s.player.y, s.player.z);
+    verticalSpeed = 0;
     const restoredFloor = floorAt(s.player.y - 0.85),
       restoredDistrict = districtAt(s.player.x, s.player.z);
     if (
@@ -393,6 +454,25 @@ function start() {
     hold = s.hold;
     if (s.simulation) simulation.restore(s.simulation);
     else simulation.reset(clock);
+    for (const r of rooms)
+      teacherControllers.set(r.id, new TeacherController(r));
+    for (const record of s.teachers ?? [])
+      teacherControllers.get(record.room)!.restore(record);
+    for (const s of staff) {
+      s.controller = new StaffController(s.index, s.role, s.floor, s.z);
+      const record = saveStaff(s.index);
+      if (record) s.controller.restore(record);
+    }
+    function saveStaff(index: number) {
+      return s.staff?.find((record) => record.index === index);
+    }
+    const riddenLift = simulation.lifts.find((l) => l.passenger("observer"));
+    elevator = riddenLift ? { bank: riddenLift.state.bank } : null;
+    env.setStairClosure(simulation.closures.has("stairs:central:0"));
+    lastBlock = `${clock.day}-${clock.block.start}-${hold}`;
+    env.passage = clock.block.kind === "PASSAGE" && !hold;
+    wayfinding.destination = "";
+    wayfinding.path = [];
     quality = s.quality;
     env.doorStates.clear();
     for (const id of s.doors) env.doorStates.set(id, true);
@@ -460,6 +540,21 @@ function start() {
   });
   document.addEventListener("keyup", (e) => keys.delete(e.code));
   window.addEventListener("blur", () => keys.clear());
+  function lineOfSight(
+    point: { x: number; y: number; z: number },
+    limit: number,
+  ) {
+    const target = new Vector3(point.x, point.y + 1.2, point.z),
+      origin = camera.position;
+    const delta = target.subtract(origin),
+      distance = delta.length();
+    if (distance > limit) return false;
+    const hit = scene.pickWithRay(
+      new Ray(origin, delta.normalize(), Math.max(0, distance - 0.45)),
+      (m) => m.checkCollisions && m.isEnabled() && m !== player,
+    );
+    return !hit?.hit;
+  }
   function nearby() {
     const f = floorAt(player.position.y - 0.85);
     const bank = districts.find(
@@ -467,14 +562,15 @@ function start() {
         Math.hypot(player.position.x - d.x - 3, player.position.z - d.z + 8) <
         7,
     );
-    if (bank) {
+    if (bank && lineOfSight({ x: bank.x + 3, y: f.y, z: bank.z - 6 }, 8)) {
       liftDistrict = bank;
       return { kind: "lift", label: `E · Use ${bank.name} lift` };
     }
     const door = env.doors.find(
       (d) =>
         Math.abs(d.y - f.y) < 1 &&
-        Math.hypot(d.x - player.position.x, d.z - player.position.z) < 4,
+        Math.hypot(d.x - player.position.x, d.z - player.position.z) < 4 &&
+        lineOfSight(d, 4.5),
     );
     if (door)
       return {
@@ -487,7 +583,11 @@ function start() {
     let nearest: { a: Avatar; distance: number } | undefined;
     for (const a of avatars.values()) {
       const d = Vector3.Distance(a.root.position, player.position);
-      if (d < 3.5 && (!nearest || d < nearest.distance))
+      if (
+        d < 3.5 &&
+        lineOfSight(a.root.position, 4) &&
+        (!nearest || d < nearest.distance)
+      )
         nearest = { a, distance: d };
     }
     if (nearest)
@@ -502,7 +602,6 @@ function start() {
     const n = nearby();
     if (!n) return;
     if (n.kind === "lift") {
-      setLiftOpen(true);
       showPanel("lift");
     } else if (n.door) {
       if (n.door.locked)
@@ -532,7 +631,9 @@ function start() {
       y: player.position.y - 0.85,
       z: player.position.z,
     });
-    if (!clock.paused) walkTime += dt;
+    if (!clock.paused && simElapsed > 0) walkTime += dt;
+    for (const controller of teacherControllers.values())
+      controller.update(clock, simElapsed, hold);
     const f = floorAt(player.position.y - 0.85);
     if (started && !panel && !elevator) {
       if (keys.has("ArrowLeft")) yaw -= dt * 1.5;
@@ -543,34 +644,67 @@ function start() {
         side = Number(keys.has("KeyD")) - Number(keys.has("KeyA"));
       const norm = Math.hypot(forward, side) || 1;
       const speed = keys.has("ShiftLeft") ? 2.7 : 1.4;
+      verticalSpeed = Math.max(-20, verticalSpeed - 9.81 * dt);
+      const beforeY = player.position.y;
       player.moveWithCollisions(
         new Vector3(
           ((Math.sin(yaw) * forward + Math.cos(yaw) * side) * speed * dt) /
             norm,
-          -0.14,
+          verticalSpeed * dt,
           ((Math.cos(yaw) * forward - Math.sin(yaw) * side) * speed * dt) /
             norm,
         ),
       );
+      if (
+        Math.abs(player.position.y - beforeY) <
+        Math.abs(verticalSpeed * dt) * 0.5
+      )
+        verticalSpeed = 0;
       if (player.position.y < -37) {
         player.position.set(0, -15.15, 82);
         bus.emit("Observer returned to the nearest safe route.");
       }
     }
     if (elevator) {
-      elevator.t += dt;
-      const t = Math.min(1, elevator.t / 4),
-        smooth = t * t * (3 - 2 * t);
-      player.position.y =
-        elevator.from + (elevator.to - elevator.from) * smooth + 0.85;
-      cabin.position.y = player.position.y - 0.85;
-      if (t === 1) {
+      const l = simulation.lifts.find((l) => l.state.bank === elevator!.bank)!;
+      const p = l.passenger("observer");
+      const moveTo = (point: { x: number; y: number; z: number }) => {
+        const goal = new Vector3(point.x, point.y + 0.85, point.z),
+          delta = goal.subtract(player.position),
+          distance = delta.length();
+        if (distance > 0.01)
+          player.position.addInPlace(
+            delta.scale(Math.min(distance, simElapsed * 1.4) / distance),
+          );
+        return distance < 0.08;
+      };
+      if (p?.phase === "waiting") {
+        if (moveTo(l.lobbyPoint("observer"))) l.beginBoard("observer");
+      } else if (p?.phase === "boarding") {
+        if (moveTo(l.cabinPoint("observer"))) l.board("observer");
+      } else if (p?.phase === "riding") {
+        const point = l.cabinPoint("observer");
+        player.position.set(point.x, point.y + 0.85, point.z);
+      } else if (p?.phase === "alighting") {
+        const floor = floors.find((f) => f.id === p.to)!;
+        if (!env.sectors.some((s) => s.id === `${floor.id}:${l.district.id}`))
+          env.buildFloor(floor.id, l.district);
+        if (moveTo({ x: l.district.x + 1.4, y: floor.y, z: l.district.z - 4 }))
+          l.finishExit("observer");
+      } else {
+        l.cancel("observer");
         elevator = null;
-        cabin.setEnabled(false);
-        setLiftOpen(true);
-        bus.emit("Lift doors open. Exit toward the academic corridor.");
+        bus.emit("Lift arrived. Continue into the academic corridor.");
       }
-    }
+      cabin.setEnabled(
+        p?.phase === "riding" ||
+          p?.phase === "boarding" ||
+          p?.phase === "alighting",
+      );
+      cabin.position.set(l.district.x, l.state.y, l.district.z);
+      cabinFront.setEnabled(!l.doorsOpen);
+      verticalSpeed = 0;
+    } else cabin.setEnabled(false);
     camera.position.copyFrom(player.position).addInPlaceFromFloats(0, 0.83, 0);
     camera.rotation.set(pitch, yaw, 0);
     env.update(player.position.y - 0.85, player.position.x, player.position.z);
@@ -595,18 +729,10 @@ function start() {
         keys.has("KeyD"),
     );
     for (const d of env.liftDoors) {
-      const fy = floors.find((f) => f.id === d.metadata.floor)!.y;
-      const demand = simulation.agents.some(
-        (a) =>
-          Math.abs(a.point.y - fy) < 0.15 &&
-          Math.abs(a.point.x - 3) < 0.3 &&
-          a.point.z <= -5 &&
-          a.point.z >= -11 &&
-          a.liftStage > 0,
-      );
-      const open =
-        (liftOpen && d.metadata.district === liftDistrict.id) ||
-        (d.metadata.district === "central" && demand);
+      const l = simulation.lifts.find(
+        (l) => l.state.bank === d.metadata.district,
+      )!;
+      const open = l.doorsOpen && l.state.floor === d.metadata.floor;
       d.position.x =
         d.metadata.baseX + (open ? (d.metadata.baseX < 3 ? -2.9 : 2.9) : 0);
       d.checkCollisions = !open;
@@ -628,6 +754,16 @@ function start() {
               ? "Meal rotations in progress. Follow your assigned group."
               : `${clock.block.label}. ${lessonPhase(clock) === "PACKING" ? "Prepare for Passage." : "Instruction and campus operations continue."}`,
         );
+    }
+    for (const d of env.doors) {
+      if (d.locked || hold) continue;
+      const passing = simulation.agents.some(
+        (a) =>
+          a.path.length > 0 &&
+          Math.abs(a.point.y - d.y) < 0.5 &&
+          Math.hypot(a.point.x - d.x, a.point.z - d.z) < 2.8,
+      );
+      if (passing && !d.open) env.setDoor(d.id, true);
     }
     simTick += dt;
     if (simTick > 0.07) {
@@ -652,7 +788,7 @@ function start() {
         .filter(
           (o) =>
             Math.abs(o.s.point.y - f.y) < 5 &&
-            o.d < 80 &&
+            o.d < (avatars.has(o.i) ? 90 : 75) &&
             o.s.activity !== "Released" &&
             o.s.activity !== "Riding lift",
         )
@@ -661,35 +797,38 @@ function start() {
       const wanted = new Set(visible.map((v) => v.i));
       for (const [i, a] of avatars)
         if (!wanted.has(i)) {
-          a.root.dispose();
+          avatarPool.release(a);
           avatars.delete(i);
         }
       for (const o of visible) {
-        if (!avatars.has(o.i)) avatars.set(o.i, new Avatar(scene, env, o.i));
+        if (!avatars.has(o.i)) avatars.set(o.i, avatarPool.acquire(o.i));
         const a = avatars.get(o.i)!;
         a.root.position.set(o.s.point.x, o.s.point.y, o.s.point.z);
         a.root.rotation.y = o.s.heading;
       }
     }
     for (const [i, a] of avatars) {
-      const s = cachedStates[i];
+      const s = simulation.state(i);
+      a.root.position.set(s.point.x, s.point.y, s.point.z);
+      a.root.rotation.y = s.heading;
       a.gesture =
-        lessonPhase(clock) === "DISCUSSION"
+        s.activity === "Discussing"
           ? "discussion"
-          : lessonPhase(clock) === "PACKING"
+          : s.activity === "Packing"
             ? "packing"
-            : i % 3 === 0
-              ? "reading"
-              : i % 3 === 1
-                ? "typing"
-                : "writing";
-      a.pose(
-        walkTime,
-        s.walking,
-        !s.walking &&
-          ["Learning", "Settling", "STILL BELL V"].includes(s.activity),
-      );
+            : s.activity === "Typing"
+              ? "typing"
+              : s.activity === "Reading"
+                ? "reading"
+                : s.activity === "Writing"
+                  ? "writing"
+                  : "listening";
+      const seated =
+        isSeatedActivity(s.activity) ||
+        (s.activity === "STILL BELL V" && atSeat(s.point, s.room, i));
+      a.pose(walkTime, s.walking, seated, false);
     }
+
     for (const r of rooms) {
       const active =
         Math.abs(r.y - f.y) < 5 &&
@@ -713,38 +852,38 @@ function start() {
         continue;
       }
       if (active) {
-        t.avatar.root.position.y = t.room.y;
-        t.avatar.root.position.z = t.room.z - 9;
-        const phase = lessonPhase(clock);
-        t.avatar.root.position.x =
-          t.room.x +
-          (phase === "INDIVIDUAL WORK"
-            ? Math.sin(walkTime * 0.2) * 3
-            : Math.sin(walkTime * 0.1) * 0.5);
-        t.avatar.pose(walkTime, phase === "INDIVIDUAL WORK", false, true);
+        const controller = teacherControllers.get(t.room.id)!;
+
+        t.avatar.root.position.set(
+          controller.point.x,
+          controller.point.y,
+          controller.point.z,
+        );
+        t.avatar.root.rotation.y = controller.heading;
+        t.avatar.pose(walkTime, controller.walking, false, true);
       }
     }
     for (const s of staff) {
-      const sf = floors.find((f) => f.id === s.floor)!;
+      s.controller.update(
+        simElapsed,
+        clock.block.kind === "PASSAGE",
+        simulation.closures.size > 0,
+      );
+      const state = s.controller.state;
       s.avatar.root.setEnabled(
-        sf.id === f.id &&
-          Math.hypot(player.position.x, player.position.z - s.z) <
-            (gpu ? 65 : 25),
+        s.floor === f.id &&
+          Math.hypot(
+            player.position.x - state.point.x,
+            player.position.z - state.point.z,
+          ) < (gpu ? 65 : 25),
       );
-      const passage = clock.block.kind === "PASSAGE";
-      s.avatar.root.position.set(
-        s.role === "Custodian" ? (passage ? 4.8 : 3.5) : -4,
-        sf.y,
-        s.z +
-          (s.role === "Custodian" && !passage
-            ? Math.sin(walkTime * 0.035) * 15
-            : 0),
-      );
+      s.avatar.root.position.set(state.point.x, state.point.y, state.point.z);
+      s.avatar.root.rotation.y = state.heading;
       s.avatar.pose(
         walkTime,
-        s.role === "Custodian" && !passage,
+        state.walking,
         false,
-        s.role !== "Custodian",
+        !state.walking && s.role !== "Custodian",
       );
     }
     lastUI += dt;
@@ -760,12 +899,25 @@ function start() {
       $("activity").textContent =
         `Observer · ${f.era} architecture · ${lessonPhase(clock).toLowerCase()}`;
       $("pause").textContent = clock.paused ? "Resume" : "Pause";
+      if (wayfinding.destination) {
+        const position = {
+          x: player.position.x,
+          y: player.position.y - 0.85,
+          z: player.position.z,
+        };
+        wayfinding.update(position);
+        const next = wayfinding.next,
+          distance = wayfinding.remaining(position);
+        $("activity").textContent = next
+          ? `${wayfinding.destination} · ${Math.round(distance)} m remaining · next waypoint Level ${floorAt(next.y).id}`
+          : `Arrived at ${wayfinding.destination}`;
+      }
       const n = nearby();
       $("hint").textContent = n?.label ?? "";
       $("hint").classList.toggle("hidden", !n || !!panel || !started);
       if (debug)
         $("debug").textContent =
-          `${Math.round(engine.getFps())} FPS · ${quality}\nRendered: ${avatars.size} · Offscreen slice: ${ACTIVE_STUDENTS - avatars.size}\nIdentity capacity: 30,000 · Slice schedules: ${ACTIVE_STUDENTS}\nFloor ${f.id} · ${env.sectors.filter((s) => s.root.isEnabled()).length} loaded sectors\n${clock.block.kind} · ${lessonPhase(clock)}\nCycle ${clock.cycleDay} · Pulse ${clock.block.pulse}\nLift queue: ${simulation.queueCount} · Late arrivals: ${simulation.lateCount}\nActive meshes: ${scene.getActiveMeshes().length}\nTriangles: ${Math.round(scene.getActiveIndices() / 3)}\nPosition: ${player.position.x.toFixed(1)}, ${player.position.y.toFixed(1)}, ${player.position.z.toFixed(1)}`;
+          `${Math.round(engine.getFps())} FPS · ${quality}\nRendered: ${avatars.size} · Offscreen slice: ${ACTIVE_STUDENTS - avatars.size}\nIdentity capacity: 30,000 · Slice schedules: ${ACTIVE_STUDENTS}\nFloor ${f.id} · ${env.sectors.filter((s) => s.root.isEnabled()).length} loaded sectors\n${clock.block.kind} · ${lessonPhase(clock)}\nCycle ${clock.cycleDay} · Pulse ${clock.block.pulse}\nLift queue: ${simulation.queueCount} · Late arrivals: ${simulation.lateCount} · Blocked: ${simulation.blockedCount}\nActive meshes: ${scene.getActiveMeshes().length}\nTriangles: ${Math.round(scene.getActiveIndices() / 3)}\nPosition: ${player.position.x.toFixed(1)}, ${player.position.y.toFixed(1)}, ${player.position.z.toFixed(1)}`;
       const boardKey = lessonPhase(clock);
       if (`${boardKey}:${env.boards.length}` !== lastBoard) {
         lastBoard = `${boardKey}:${env.boards.length}`;
@@ -801,7 +953,7 @@ function start() {
         }
       }
     }
-    if (autoSave > 30 && started && !elevator) {
+    if (autoSave > 30 && started) {
       autoSave = 0;
       try {
         saveLocal(snapshot());

@@ -86,3 +86,45 @@ it("streams the deep extension, preserves door state, and has a traversable floo
   );
   expect(hit?.pickedPoint?.y).toBeCloseTo(-32, 1);
 });
+
+it("keeps representative classroom and cross-floor routes clear of solid architecture", async () => {
+  const { routeBetween, distance } =
+    await import("../src/navigation/RoutePlanner");
+  const { roomById, seat } = await import("../src/campus/plan");
+  for (const f of [1, -1, -2])
+    if (!env.sectors.some((s) => s.id === `${f}:central`)) env.buildFloor(f);
+  for (const sector of env.sectors) sector.root.setEnabled(true);
+  for (const d of env.doors) if (!d.locked) env.setDoor(d.id, true);
+  env.setStairClosure(false);
+  for (const m of scene.meshes) m.computeWorldMatrix(true);
+  const collisions: string[] = [];
+  for (const [from, to] of [
+    ["F1-101", "F1-102"],
+    ["F1-101", "B1-101"],
+    ["B1-104", "B2-102"],
+  ]) {
+    const a = roomById(from)!,
+      b = roomById(to)!,
+      path = routeBetween(a, b, seat(a, 0), seat(b, 0));
+    for (let i = 1; i < path.length; i++) {
+      const start = new Vector3(
+          path[i - 1].x,
+          path[i - 1].y + 0.85,
+          path[i - 1].z,
+        ),
+        end = new Vector3(path[i].x, path[i].y + 0.85, path[i].z);
+      const delta = end.subtract(start),
+        len = delta.length();
+      if (len < 0.05) continue;
+      const hit = scene.pickWithRay(
+        new Ray(start, delta.normalize(), Math.max(0, len - 0.03)),
+        (m) => m.checkCollisions && m.isEnabled(),
+      );
+      if (hit?.hit)
+        collisions.push(
+          `${from}->${to} segment ${i} ${JSON.stringify(path[i - 1])}->${JSON.stringify(path[i])} ${hit.pickedMesh?.name}`,
+        );
+    }
+  }
+  expect(collisions).toEqual([]);
+});

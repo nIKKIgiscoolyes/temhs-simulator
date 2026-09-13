@@ -144,9 +144,9 @@ export function districtAt(x: number, z: number) {
 }
 export function seat(room: Room, index: number): Point {
   return {
-    x: room.x + ((index % 4) - 1.5) * 2.65,
+    x: room.x + ((index % 4) - 1.5) * (room.id === "F1-101" ? 2.9 : 2.65),
     y: room.y,
-    z: room.z - 6 + Math.floor(index / 4) * 2.6,
+    z: room.z - 6 + Math.floor(index / 4) * (room.id === "F1-101" ? 3 : 2.6),
   };
 }
 export const lift = { x: 3, y: 0, z: -10 };

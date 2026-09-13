@@ -35,3 +35,9 @@ Built forward from sanitized public alpha `8945b40`; retained the engine, clock,
 The browser now reaches the preview but has no WebGL. Added a depth-buffered CPU compatibility view of the same geometry. Inspected the upgraded classroom, Floor 2 east wing, Level -4 north extension, map navigation and successful local save. Corrected teacher placement, stale map content, meal/release routines, utility IDs, streaming texture cleanup and explicit destination loading. Automated checks: 22 tests pass; type checking and production build pass. Vite retains a large vendor-chunk warning. Full GPU visual acceptance, frame rate and all-route first-person traversal remain open.
 
 Original source attachments remain local/reference-only. No downloaded character models, recordings or source images were added to runtime assets.
+
+## Living campus alpha 0.3 — September 13, 2026
+
+Preserved expansion commit `9d22cea`. Integrated shared observer/NPC lifts with capacity and landing interlocks; live graph routing and TMAP closure; teacher circulation, student phase actions and staff routines; v3 persistent state; bounded avatar reuse; classroom directory; hinged doors; and three focal classroom layouts. Corrected save restoration so the next frame does not reset restored doors, and prevented observer map travel during a lift journey.
+
+32 automated tests and production build pass. CPU classroom views were inspected; the 2,880-agent / 30-second simulation probe took approximately 942 ms on this host. Current browser preview access was blocked, so GPU performance and interactive traversal are open. No downloaded media or original source uploads were added. The engineering brief distinguishes implemented scope from remaining production acceptance.

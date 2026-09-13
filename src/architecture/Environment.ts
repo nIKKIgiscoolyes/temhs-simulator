@@ -14,6 +14,7 @@ import {
   rooms,
   districts,
   supportRooms,
+  seat,
   type District,
   type Room,
 } from "../campus/plan";
@@ -27,6 +28,7 @@ export interface Door {
   z: number;
   localZ?: number;
   axis?: "x" | "z";
+  pivot?: TransformNode;
 }
 export class Environment {
   mats = new Map<string, PBRMaterial>();
@@ -42,12 +44,64 @@ export class Environment {
   passage = false;
   connections: { root: TransformNode; y: number }[] = [];
   private lastStreaming = 0;
+  private stairBarriers: TransformNode[] = [];
   boards: { texture: DynamicTexture; room: Room }[] = [];
   liftDoors: Mesh[] = [];
   constructor(public scene: Scene) {
     for (const floor of floors.slice(0, 3)) this.buildFloor(floor.id);
     this.stairs();
     this.buildConnections();
+    this.buildStairInspection();
+  }
+  private buildStairInspection() {
+    for (const p of [
+      { x: -2, y: 0, z: 96 },
+      { x: -8, y: -8, z: 99 },
+    ]) {
+      const root = new TransformNode("TMAP inspection barrier", this.scene);
+      this.stairBarriers.push(root);
+      const gold = this.material("inspection-gold", "#c5a151"),
+        dark = this.material("inspection-dark", "#343c3c");
+      this.box(
+        "closed stair barrier",
+        p.x,
+        p.y + 0.9,
+        p.z,
+        4,
+        1.8,
+        0.18,
+        gold,
+        root,
+      );
+      for (let i = -2; i <= 2; i++)
+        this.box(
+          "barrier stripe",
+          p.x + i * 0.7,
+          p.y + 0.9,
+          p.z + 0.1,
+          0.16,
+          1.7,
+          0.02,
+          dark,
+          root,
+          false,
+        );
+      this.sign(
+        "TMAP / STAIR INSPECTION\nUSE LIFT OR NORTH DISTRICT STAIRS",
+        p.x,
+        p.y + 2.4,
+        p.z,
+        5,
+        1,
+        Math.PI,
+        root,
+        "#634d28",
+      );
+      root.setEnabled(false);
+    }
+  }
+  setStairClosure(closed: boolean) {
+    for (const root of this.stairBarriers) root.setEnabled(closed);
   }
   material(name: string, color: string, roughness = 0.7, noise = false) {
     if (this.mats.has(name)) return this.mats.get(name)!;
@@ -170,14 +224,22 @@ export class Environment {
     c.fillRect(0, 0, t.getSize().width, t.getSize().height);
     c.fillStyle = "#edf4ed";
     c.textAlign = "center";
-    c.font = `600 ${Math.floor((1024 / w) * 0.19)}px sans-serif`;
-    const lines = text.split("\n");
+    const lines = text.split("\n"),
+      size = t.getSize();
+    let fontSize = Math.min(
+      (1024 / w) * 0.19,
+      (size.height / (lines.length + 1)) * 0.8,
+    );
+    c.font = `600 ${fontSize}px sans-serif`;
+    const widest = Math.max(...lines.map((line) => c.measureText(line).width));
+    fontSize *= Math.min(1, (1024 * 0.9) / Math.max(1, widest));
+    c.font = `600 ${fontSize}px sans-serif`;
+    c.textBaseline = "middle";
     lines.forEach((line, i) =>
       c.fillText(
         line,
         512,
-        t.getSize().height / 2 +
-          (((i - (lines.length - 1) / 2) * 1024) / w) * 0.3,
+        size.height / 2 + (i - (lines.length - 1) / 2) * fontSize * 1.35,
       ),
     );
     t.update();
@@ -681,8 +743,15 @@ export class Environment {
       wood,
       root,
     );
+    const pivot = new TransformNode("door hinge " + r.id, this.scene);
+    pivot.metadata = { swing: r.x < 0 ? -1 : 1 };
+    pivot.parent = root;
+    pivot.position.set(r.door.x, y + 1.9, r.z - 1.6);
+    door.parent = pivot;
+    door.position.set(0, 0, 1.6);
     this.doors.push({
       id: r.id,
+      pivot,
       mesh: door,
       open: false,
       locked: false,
@@ -713,6 +782,7 @@ export class Environment {
     );
     this.boards.push({ texture: tex, room: r });
     this.roomDetails(r, root);
+    this.focalRoom(r, root);
     this.box(
       "teaching counter",
       r.x + Math.sign(r.x) * 5.7,
@@ -751,8 +821,7 @@ export class Environment {
       );
     }
     for (let i = 0; i < 16; i++) {
-      const x = r.x + ((i % 4) - 1.5) * 2.65,
-        z = r.z - 6 + Math.floor(i / 4) * 2.6;
+      const { x, z } = seat(r, i);
       this.box("desktop", x, y + 0.85, z - 0.6, 1.7, 0.08, 0.85, wood, root);
       for (const dx of [-0.68, 0.68])
         for (const dz of [-0.3, 0.3])
@@ -1017,8 +1086,7 @@ export class Environment {
       "#345a52",
     );
     for (let i = 0; i < 16; i++) {
-      const x = r.x + ((i % 4) - 1.5) * 2.65,
-        z = r.z - 6 + Math.floor(i / 4) * 2.6;
+      const { x, z } = seat(r, i);
       const bottle = MeshBuilder.CreateCylinder(
         "water bottle",
         { diameter: 0.085, height: 0.24, tessellation: 10 },
@@ -1267,6 +1335,193 @@ export class Environment {
       );
       leaf.material = this.material("foliage", "#455e40");
       leaf.parent = root;
+    }
+  }
+  focalRoom(r: Room, root: TransformNode) {
+    const wall = this.mats.get("white")!,
+      wood = this.mats.get("oak")!,
+      metal = this.mats.get("metal")!;
+    if (r.id === "F1-101") {
+      this.sign(
+        "CIVIC SEMINAR / DISCUSSION & EVIDENCE",
+        r.x,
+        r.y + 3.8,
+        r.z + 11.75,
+        10,
+        0.8,
+        0,
+        root,
+        "#3f6265",
+      );
+      for (const x of [-4, 0, 4]) {
+        this.box(
+          "seminar acoustic cloud",
+          r.x + x,
+          r.y + 4.7,
+          r.z + 3,
+          2.6,
+          0.18,
+          11,
+          wood,
+          root,
+          false,
+        );
+        this.box(
+          "project display rail",
+          r.x + x,
+          r.y + 2.7,
+          r.z + 11.6,
+          3,
+          1.1,
+          0.06,
+          wall,
+          root,
+          false,
+        );
+      }
+      for (const x of [-4, 4])
+        this.box(
+          "collaboration bench",
+          r.x + x,
+          r.y + 0.45,
+          r.z + 9.4,
+          3,
+          0.2,
+          0.6,
+          wood,
+          root,
+        );
+    } else if (r.id === "B1-104") {
+      this.sign(
+        "BIOMEDICAL LAB / OBSERVE · RECORD · EXPLAIN",
+        r.x,
+        r.y + 3.8,
+        r.z + 11.7,
+        11,
+        0.8,
+        0,
+        root,
+        "#405b54",
+      );
+      for (const x of [-3, 3]) {
+        this.box(
+          "lab preparation island",
+          r.x + x,
+          r.y + 0.9,
+          r.z + 8.5,
+          3,
+          1.8,
+          1.2,
+          wall,
+          root,
+        );
+        this.box(
+          "lab durable surface",
+          r.x + x,
+          r.y + 1.85,
+          r.z + 8.5,
+          3.2,
+          0.1,
+          1.4,
+          metal,
+          root,
+        );
+        this.box(
+          "lab basin",
+          r.x + x,
+          r.y + 1.91,
+          r.z + 8.5,
+          0.6,
+          0.04,
+          0.45,
+          metal,
+          root,
+          false,
+        );
+      }
+      this.box(
+        "1978 utility riser",
+        r.x - 7,
+        r.y + 2.6,
+        r.z + 9,
+        0.3,
+        5.2,
+        0.3,
+        metal,
+        root,
+      );
+      this.sign(
+        "TMAP / VENTILATION UPGRADE 2026",
+        r.x,
+        r.y + 2.6,
+        r.z + 11.7,
+        5,
+        0.6,
+        0,
+        root,
+        "#526453",
+      );
+    } else if (r.id === "B2-102") {
+      this.sign(
+        "CIVIC MEMORY / PROVENANCE · CONTEXT · OMISSIONS",
+        r.x,
+        r.y + 3.8,
+        r.z + 11.7,
+        11,
+        0.8,
+        0,
+        root,
+        "#665342",
+      );
+      for (const x of [-4, 0, 4]) {
+        this.box(
+          "archival consultation table",
+          r.x + x,
+          r.y + 0.78,
+          r.z + 8.8,
+          2.8,
+          0.12,
+          1.2,
+          wood,
+          root,
+        );
+        for (const side of [-1, 1])
+          this.box(
+            "consultation table base",
+            r.x + x + side,
+            r.y + 0.38,
+            r.z + 8.8,
+            0.1,
+            0.76,
+            0.7,
+            metal,
+            root,
+            false,
+          );
+        this.box(
+          "document cradle",
+          r.x + x,
+          r.y + 0.9,
+          r.z + 8.8,
+          0.65,
+          0.1,
+          0.5,
+          wall,
+          root,
+          false,
+        );
+        this.sign(
+          "SOURCE / FACSIMILE",
+          r.x + x,
+          r.y + 1,
+          r.z + 8.5,
+          1,
+          0.25,
+          Math.PI,
+          root,
+          "#665342",
+        );
+      }
     }
   }
   stairs() {
@@ -1724,10 +1979,14 @@ export class Environment {
   }
   setDoor(id: string, open: boolean) {
     const d = this.doors.find((d) => d.id === id);
+    if (d?.locked) return;
     this.doorStates.set(id, open);
-    if (!d || d.locked) return;
+    if (!d) return;
     d.open = open;
-    if (d.axis === "x") d.mesh.position.x = d.x + (open ? 3.3 : 0);
+    if (d.pivot)
+      d.pivot.rotation.y =
+        (Number(open) * d.pivot.metadata.swing * Math.PI) / 2;
+    else if (d.axis === "x") d.mesh.position.x = d.x + (open ? 3.3 : 0);
     else d.mesh.position.z = (d.localZ ?? d.z) + (open ? 3.3 : 0);
     d.mesh.checkCollisions = !open;
   }
